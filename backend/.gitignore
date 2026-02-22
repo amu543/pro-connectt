@@ -1,0 +1,10 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Uploads
+uploads/
+# Ignore API documentation
+API_DOCUMENTATION.md
