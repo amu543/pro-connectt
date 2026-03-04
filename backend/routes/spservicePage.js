@@ -125,23 +125,34 @@ router.patch(
 
 
       // Update phone
-      if (body.Phone) {
+      if (body.phone) {
         const phoneRegex = /^\+977\d{10}$/;
-        if (!phoneRegex.test(body.Phone))
+        if (!phoneRegex.test(body.phone))
           return res.status(400).json({ error: "Phone number must be in Nepal format +977XXXXXXXXXX" });
-        sp.phone = body.Phone;
+        sp.phone = body.phone;
       }
 
       // Update skills/expertise
-      if (body["Skills / Expertise"]) {
-        const skillsRaw = body["Skills / Expertise"];
+      if (body.skillsExpertise) {
+        try{
+        const skillsRaw = body.skillsExpertise;
         const skills = typeof skillsRaw === "string"
           ? (skillsRaw.startsWith("[") ? JSON.parse(skillsRaw) : skillsRaw.split(",").map(s => s.trim()))
           : skillsRaw;
-        if (!Array.isArray(skills) || skills.length === 0)
-          return res.status(400).json({ error: "Skills/Expertise must be non-empty array" });
-        sp["Skills / Expertise"] = skills;
+        if (!Array.isArray(skills) || skills.length === 0){
+          return res.status(400).json({
+             error: "Skills/Expertise must be non-empty array" });
       }
+        sp.skillsExpertise= skills.map(skill =>({
+          name: skill.name || skill, // if it's an object with name or just a string
+          price: skill.price ?? null
+        }));
+        } catch (error) {
+    return res.status(400).json({
+      error: "Invalid skills format"
+    });
+  }
+}
 
       // Update files
      if (files.profilePhoto?.[0]) {
@@ -159,7 +170,9 @@ router.patch(
       if (files.portfolio?.length) {
         sp.portfolio = files.portfolio.map(saveFile);
       }
+      console.log("Before Save:", sp);
       await sp.save();
+      console.log("After Save:", sp);
       res.json({ message: "Profile updated successfully", user: sp });
     } catch (err) {
       console.error("Service Page: Profile update error", err);

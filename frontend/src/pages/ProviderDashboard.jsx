@@ -1,24 +1,23 @@
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { motion } from "framer-motion";
 import {
-  LogOut,
-  User,
-  ClipboardList,
-  CheckCircle,
-  MapPin,
-  Edit2,
-  Save,
-  Phone,
-  Navigation,
   Award,
-  Star,
   Briefcase,
+  CheckCircle,
+  ClipboardList,
+  Edit2,
+  LogOut,
+  MapPin,
+  Navigation,
   Plus,
+  Save,
+  Star,
+  User,
   X
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
+import { useNavigate } from "react-router-dom";
 
 // API Configuration
 const API_BASE_URL = "http://localhost:5000/api";
@@ -32,7 +31,7 @@ export default function ProviderDashboard() {
   const [skills, setSkills] = useState([]);
   const [newSkill, setNewSkill] = useState("");
   const [profilePic, setProfilePic] = useState(null);
-  const [profilePicFile, setProfilePicFile] = useState(null);
+  const [profilePhotoFile, setProfilePhotoFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // ----------------------
@@ -151,15 +150,15 @@ const handleSaveProfile = async () => {
   try {
     const formData = new FormData();
     formData.append("phone", phone);
-    formData.append("Skills / Expertise", JSON.stringify(skills));
-    formData.append("Short Bio", bio);
-    if (profilePicFile) {
-      formData.append("Profile Photo", profilePicFile);
+    formData.append("skillsExpertise", JSON.stringify(skills));
+    formData.append("shortBio", bio);
+    if (profilePhotoFile) {
+      formData.append("profilePhoto", profilePhotoFile);
     }
 
     // Update profile using the correct endpoint
     const response = await axios.patch(
-      `${API_BASE_URL}/service-provider/update-profile`,
+      `${API_BASE_URL}/sp-service-page/update-profile`,
       formData,
       {
         headers: {
@@ -174,7 +173,7 @@ const handleSaveProfile = async () => {
       setIsEditing(false);
       
       // Refresh profile data from /my-details
-      const profileRes = await api.get("/service-provider/my-details");
+      const profileRes = await api.get("/sp-service-page/my-details");
       const profileData = profileRes.data;
       
       const updatedProfile = {

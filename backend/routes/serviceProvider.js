@@ -8,10 +8,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Tesseract = require("tesseract.js");
 // serviceProvider.js
-const pdfParseModule = require("pdf-parse");
-const PDFParse = pdfParseModule.PDFParse || pdfParseModule.default || pdfParseModule;
-console.log("pdfParseModule:", pdfParseModule);
-console.log("pdfParse:", PDFParse);
+const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
+
 //const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const mammoth = require("mammoth");
 const ServiceProvider = require("../models/ServiceProvider");
@@ -314,12 +312,17 @@ async function verifyCV(cvPath, fullName, service, skills, yearsOfExperience) {
 
   const ext = path.extname(cvPath).toLowerCase();
   try {
-     if (ext === ".pdf") {
-      // ✅ New pdf-parse method
-      const dataBuffer = fs.readFileSync(cvPath);
-      const pdfParser = new PDFParse(dataBuffer);     // instantiate
-      const pdfData = await pdfParser.parseBuffer(); 
-       const cvText = pdfData.text.replace(/\r?\n|\r/g, " ").toLowerCase();
+    if (ext === ".pdf") {
+      // ✅ Use legacy build for Node.js
+      const data = new Uint8Array(fs.readFileSync(cvPath));
+      const pdf = await pdfjsLib.getDocument({ data }).promise;
+      let textContent = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        textContent += content.items.map(item => item.str).join(" ") + "\n";
+      }
+      cvText = textContent.toLowerCase();
 
     } else if (ext === ".txt") {
       cvText = fs.readFileSync(cvPath, "utf-8").toLowerCase();
@@ -338,6 +341,7 @@ async function verifyCV(cvPath, fullName, service, skills, yearsOfExperience) {
       cvVerified = false;
     }
 
+
     // Case-insensitive checks
     // Name check
     if (cvText.includes(fullName.toLowerCase())) {
@@ -354,9 +358,10 @@ async function verifyCV(cvPath, fullName, service, skills, yearsOfExperience) {
     }
 
     // Skills check
+    const normalizedCVText = cvText.toLowerCase();
     skills.forEach(skillObj => {
   const skillName = skillObj.name; // get the string
-  if (typeof skillName === "string" && cvText.includes(skillName.toLowerCase())) {
+  if (typeof skillName === "string" && normalizedCVText.includes(skillName.toLowerCase())) {
     cvVerificationDetails.skillsMatched.push(skillName);
   }
 });

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
 import addresData from "../data/addresData.json";
 
 const API_BASE_URL = "http://localhost:5000/api";
@@ -1098,8 +1099,8 @@ const ProviderRegistration = () => {
                       {errors.cvFile && (
                         <p className="text-red-500 text-sm mt-1">{errors.cvFile}</p>
                       )}
+                     
                     </div>
-
                     <div>
                       <label className="text-sm font-medium text-slate-700">Portfolio</label>
                       <p className="text-xs text-slate-400 mb-1">Max: 5 MB each (JPG/PNG/PDF)</p>

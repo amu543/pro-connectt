@@ -22,7 +22,7 @@
     "multer": "^2.0.2",
     "nodemailer": "^7.0.11",
     "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "^5.4.624",
+    "pdfjs-dist": "^2.16.105",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",

@@ -14,19 +14,94 @@ router.get(
   customerAuth,
   async (req, res) => {
     try {
-      const { service } = req.params;
-
+      const rawService = req.params.service;
+      const exactService = req.query.exactService;
+       const customerId = req.query.customerId;
+      
+      console.log("🔍 Request.js - Finding providers for:", { rawService, exactService, customerId });
+      
+      // Get the customer to use their location for distance calculation
+      const customer = await Customer.findById(customerId);
+      if (!customer) {
+        return res.status(404).json({ msg: "Customer not found" });
+      }
+      
+      if (!customer.location || !customer.location.coordinates) {
+        return res.status(400).json({ msg: "Customer location not set" });
+      }
+      
+      const customerCoords = customer.location.coordinates; // [lng, lat]
+      console.log("Customer coordinates:", customerCoords);
+      console.log("🔍 Request.js - Finding providers for:", { rawService, exactService });
+       let serviceToFind = exactService;
+      
+      if (!serviceToFind) {
+        // Fallback mapping for common services
+        const serviceMap = {
+          'home-tutors': 'Home Tutors',
+          'plumber': 'Plumber',
+          'electrician': 'Electrician',
+          'painter': 'Painter',
+          'house-help': 'House Help',
+          'babysitters': 'Babysitters',
+          'sofa-carpet-cleaner': 'Sofa/Carpet Cleaner',
+          'event-decorators': 'Event Decorators',
+          'carpenter': 'Carpenter',
+          'photographer': 'Photographer',
+          'band-baja': 'Band Baja',
+          'private-chef': 'Private Chef',
+          'locksmith': 'Locksmith',
+          'laundry': 'Laundry',
+          'movers-packers': 'Movers & Packers',
+          'waterproofing': 'Waterproofing'
+        };
+        
+        serviceToFind = serviceMap[rawService] || 
+          rawService.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      }
+      
+      console.log("🔍 Searching for exact service:", serviceToFind);
       const providers = await ServiceProvider.find({
         role: "provider",
-        service: { $regex: new RegExp(`^${service}$`, "i") },
+        service: serviceToFind,
         isVerified: true
       }).select(
-        "Full Name phone service experience Profile Photo currentLocation"
+        "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio"
       );
+       console.log(`✅ Found ${providers.length} providers for ${serviceToFind}`);
 
+      const transformedProviders = providers.map(p => {
+        let distanceInKm = null;
+        if (p.currentLocation && p.currentLocation.coordinates) {
+          const [lng, lat] = p.currentLocation.coordinates;
+          distanceInKm = getDistanceFromLatLonInKm(
+            customerCoords[1], customerCoords[0], 
+            lat, lng
+          );
+        }
+        return{
+        _id: p._id,
+        id: p._id,
+          fullName: p.fullName,
+          name: p.fullName,
+          phone: p.phone,
+          service: p.service,
+          experience: p.yearsOfExperience || "N/A",
+          yearsOfExperience: p.yearsOfExperience || "N/A",
+          profilePhoto: p.profilePhoto || null,
+          currentLocation: p.currentLocation,
+          skills: p.skillsExpertise || [],
+          topSkills: p.skillsExpertise || [],
+          shortBio: p.shortBio || "No bio available",
+          bio: p.shortBio || "No bio available",
+          isOnline: p.isOnline,
+          isVerified: p.isVerified,
+          distanceInKm: distanceInKm ? parseFloat(distanceInKm.toFixed(1)) : null
+        };
+      });
       res.json({
-        count: providers.length,
-        providers
+        count: transformedProviders.length,
+        providers: transformedProviders
       });
     } catch (err) {
       console.error("get providers error:", err);
@@ -35,7 +110,16 @@ router.get(
   }
 );
 
-
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371; // Earth radius km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 /* ============================
    2. SELECT SERVICE
    → Notify ALL providers of that service

@@ -1,41 +1,42 @@
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
-import { 
-  LogOut, 
-  User, 
-  ClipboardList, 
-  CheckCircle, 
-  Mail, 
-  MapPin, 
-  Phone,
-  Star,
+import { motion } from "framer-motion";
+import {
   Award,
   Calendar,
-  Save,
+  CheckCircle,
+  ClipboardList,
   Edit2,
-  Navigation
+  LogOut,
+  Mail,
+  MapPin,
+  Navigation,
+  Phone,
+  Save,
+  Star,
+  User
 } from "lucide-react";
-import { FaPhone, FaCheckCircle, FaMapMarkerAlt, FaStar, FaRegClock, FaBriefcase, FaChevronDown, FaChevronUp } from "react-icons/fa";
+import { useEffect, useState } from "react";
+import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone, FaStar } from "react-icons/fa";
+import { useNavigate, useParams } from "react-router-dom";
 
 // Services images
-import plumber from "../assets/services/plumber.jpeg";
-import electrician from "../assets/services/electrician.jpeg";
-import tutor from "../assets/services/tutor.jpeg";
-import painter from "../assets/services/painter.jpeg";
-import cleaner from "../assets/services/cleaner.jpeg";
 import babysitter from "../assets/services/babysitter.jpeg";
-import sofacarpet from "../assets/services/sofa-carpet.jpeg";
-import decorator from "../assets/services/event-decorators.jpeg";
-import carpenter from "../assets/services/carpenter.jpeg";
-import photographer from "../assets/services/photographer.jpeg";
 import bandbaja from "../assets/services/bandbaja.jpeg";
+import carpenter from "../assets/services/carpenter.jpeg";
 import chef from "../assets/services/chef.jpeg";
-import locksmith from "../assets/services/locksmith.jpeg";
+import cleaner from "../assets/services/cleaner.jpeg";
+import electrician from "../assets/services/electrician.jpeg";
+import decorator from "../assets/services/event-decorators.jpeg";
 import laundry from "../assets/services/laundry.jpeg";
+import locksmith from "../assets/services/locksmith.jpeg";
 import movers from "../assets/services/movers.jpeg";
+import painter from "../assets/services/painter.jpeg";
+import photographer from "../assets/services/photographer.jpeg";
+import plumber from "../assets/services/plumber.jpeg";
+import sofacarpet from "../assets/services/sofa-carpet.jpeg";
+import tutor from "../assets/services/tutor.jpeg";
 import waterproofing from "../assets/services/waterproofing.jpeg";
+
 
 // Services list
 const SERVICES = [
@@ -58,7 +59,15 @@ const SERVICES = [
 ];
 
   const API_BASE_URL = "http://localhost:5000/api";
-
+const SERVICE_NAME_MAPPING = {
+  'home-tutors': 'Home Tutors',      // Map URL slug to exact DB value
+  'home tutors': 'Home Tutors',      // Also map space version
+  'hometutors': 'Home Tutors',
+  'plumber': 'Plumber',
+  'electrician': 'Electrician',
+  'painter': 'Painter',
+  // Add all other services...
+};
 // API Service functions
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -126,18 +135,33 @@ updateLocation: async (latitude, longitude) => {
 
   // Try the request providers route first, fallback to customerDashboard providers if needed
   getProvidersByService: async (service, customerId) => {
-    const formattedService = service.toLowerCase().replace(/\s+/g, "-");
+    const exactServiceName = SERVICE_NAME_MAPPING[service.toLowerCase()] || service;
+  console.log("Mapped service name for DB query:", exactServiceName);
     try {
+       const formattedService = service.toLowerCase().replace(/\s+/g, "-");
+    console.log("URL formatted service:", formattedService);
+    console.log("Attempting primary route:", `/customer/request/providers/${formattedService}`);
       const response = await api.get(`/customer/request/providers/${formattedService}`, {
-        params: { customerId }
+        params: { customerId, 
+          exactService: exactServiceName, // Send exact service name for better matching
+         }
       });
+      
+      console.log("✅ Primary route response FULL:", response.data);
+    console.log("Response type:", typeof response.data);
+    console.log("Response keys:", Object.keys(response.data));
+    console.log("Providers array:", response.data.providers);
+    console.log("Providers count:", response.data.providers?.length);
+
       return response.data;
     } catch (err) {
+      console.log("Primary route failed:", err.response?.status, err.message);
       // fallback to customerDashboard providers route (mounted at /customer/customerDashboard)
       if (err?.response?.status === 404 || err?.response?.status === 400) {
         const fallback = await api.get(`/customer/customerDashboard/providers/${formattedService}`, {
-          params: { customerId }
+          params: { customerId , exactService: exactServiceName }
         });
+        console.log("Fallback route response:", fallback.data);
         return fallback.data;
       }
       throw err;
@@ -208,6 +232,9 @@ export default function CustomerDashboard() {
 
   // fetchProviders - uses /customer/request/providers/:service (with fallback)
   const fetchProviders = async (service) => {
+    console.log("fetchProviders called with service:", service);
+  console.log("Service type:", typeof service);
+  console.log("Service length:", service?.length);
     try {
       setLoading(true);
       if (!service) {
@@ -386,7 +413,10 @@ export default function CustomerDashboard() {
   };
 
   const handleCategoryClick = (service) => {
+    console.log("Category clicked:", service);
+  console.log("Service title:", service.title);
     const slug = service.title.toLowerCase().replace(/\s+/g, "-");
+    console.log("Generated slug:", slug);
     setSelectedCategory(service.title);
     setActiveTab("services");
     navigate(`/customer-dashboard/${slug}`);
@@ -424,29 +454,33 @@ export default function CustomerDashboard() {
 
   // Process provider data from API - UPDATED for your schema
   const processProvider = (provider, index) => {
-    // Check your backend schema - looks like fields might have spaces
-    const fullName = provider["Full Name"] || provider.fullName || provider.FullName || provider.name || provider.fullName || provider.name || "Unknown Provider";
-    const profilePhoto = provider["Profile Photo"] || provider.profilePhoto || provider.photo || null;
-    const experience = provider["Year of Experience"] || provider.experience || provider.yearsOfExperience || "N/A";
-    const skills = provider["Skills / Expertise"] || provider.skills || provider.skills?.map(s => (typeof s === 'string' ? s : s.name)) || [];
-    const bio = provider["Short Bio"] || provider.bio || provider.shortBio || "No bio available";
-    
-    return {
-      id: provider._id || provider.id,
-      name: fullName,
-      profilePhoto: profilePhoto,
-      rating: provider.avgRating || provider.rating || 0,
-      totalServices: provider.servicesDone || provider.totalServices || 0,
-      experience: experience,
-      distance: provider.distanceInKm ? `${parseFloat(provider.distanceInKm).toFixed(1)} km` : (provider.distance ? `${provider.distance} km` : "N/A"),
-      address: provider.address || "",
-      bio: bio,
-      phone: provider.phone || "",
-      skills: skills,
-      online: provider.isOnline || index < 2, // Use actual online status if available
-      service: selectedCategory
-    };
+ console.log("Processing provider:", provider); // Debug log to see what we're getting
+  
+  const fullName = provider.fullName || provider.name || "Unknown Provider";
+  const profilePhoto = provider.profilePhoto || null;
+  const experience = provider.yearsOfExperience || provider.experience || "N/A";
+  const skills = provider.skills || provider.topSkills || [];
+  const bio = provider.shortBio || provider.bio || "No bio available";
+ let distanceDisplay = "N/A";
+  if (provider.distanceInKm !== undefined && provider.distanceInKm !== null) {
+    distanceDisplay = `${parseFloat(provider.distanceInKm).toFixed(1)} km`;
+  }
+  return {
+    id: provider._id || provider.id,
+    name: fullName,
+    profilePhoto: profilePhoto,
+    rating: provider.avgRating || provider.rating || 0,
+    totalServices: provider.servicesDone || provider.totalServices || 0,
+    experience: experience,
+    distance: distanceDisplay, 
+    address: provider.address || "",
+    bio: bio,
+    phone: provider.phone || "",
+    skills: skills,
+    online: provider.isOnline || false,
+    service: selectedCategory
   };
+};
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 text-gray-800">
       {/* Sidebar */}
@@ -502,7 +536,7 @@ export default function CustomerDashboard() {
           />
           <SidebarItem 
             icon={<ClipboardList size={20} />} 
-            label="Browse Services" 
+            label="Browse Services"
             active={activeTab === "services"} 
             onClick={() => setActiveTab("services")} 
             badge={SERVICES.length}
@@ -1034,11 +1068,10 @@ export default function CustomerDashboard() {
                                             <div className="flex items-center gap-2 bg-green-50 px-4 py-2 rounded-xl">
                                               <div>
                                                 <div className="font-bold text-gray-900">{processedProvider.totalServices}</div>
-                                                <div className="text-xs text-gray-500">Total Services</div>
+                                                <div className="text-xs text-gray-500">Services</div>
                                               </div>
                                             </div>
                                           </div>
-
                                           {/* Bio */}
                                           <p className="text-gray-700 mb-5">{processedProvider.bio}</p>
 

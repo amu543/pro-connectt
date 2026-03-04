@@ -53,10 +53,14 @@ router.post("/register", async (req, res) => {
       Phone: phone,
       Password: password,
       ["Confirm Password"]: confirmPassword,
-      ["Profile Photo"]: profilePhoto
+      ["Profile Photo"]: profilePhoto,
+       Province: province,
+      District: district,
+      Municipality: municipality,
+      ["Ward No"]: wardNo,
     } = req.body;
 
-    if (!fullName || !email || !phone || !password || !confirmPassword)
+    if (!fullName || !email || !phone || !password || !confirmPassword || !province || !district || !municipality || !wardNo)
       return res.status(400).json({ msg: "All fields are required" });
     if (password !== confirmPassword)
       return res.status(400).json({ msg: "Passwords do not match" });
