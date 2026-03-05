@@ -231,45 +231,161 @@ router.post("/send-request", customerAuth, async (req, res) => {
    → ONLY accepted
 ============================ */
 router.get("/my-requests/:customerId", async (req, res) => {
-  try {
+   try {
+    const customerId = req.params.customerId;
+    
+    // FIRST: Get the customer to use their location for distance calculation
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ msg: "Customer not found" });
+    }
+  
     const requests = await ServiceRequest.find({
       customer: req.params.customerId,
-      status: "accepted"
-    }).populate("provider", "Full Name phone Profile Photo");
+      status: { $in: ["pending", "accepted"] }
+    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio ");
 
-    res.json(requests);
-  } catch {
+ // Calculate distance for each request based on provider's location
+    const requestsWithDistance = requests.map(request => {
+      const requestObj = request.toObject();
+      
+      if (customer.location && 
+      customer.location.coordinates && 
+      customer.location.coordinates.length === 2 &&
+      request.provider && 
+      request.provider.currentLocation && 
+      request.provider.currentLocation.coordinates &&
+      request.provider.currentLocation.coordinates.length === 2) {
+        
+        const [providerLng, providerLat] = request.provider.currentLocation.coordinates;
+        const [customerLng, customerLat] = customer.location.coordinates;
+        
+        const distanceInKm = getDistanceFromLatLonInKm(
+          customerLat, customerLng,
+          providerLat, providerLng
+        );
+        
+        // Add distance to the provider object
+        requestObj.provider = {
+          ...requestObj.provider,
+          distanceInKm: parseFloat(distanceInKm.toFixed(1)),
+            distance: `${parseFloat(distanceInKm.toFixed(1))} km`
+        };
+        
+    console.log(`Distance calculated for provider ${requestObj.provider.fullName}: ${distanceInKm} km`);
+  } else {
+    console.log("Cannot calculate distance - missing location data:", {
+      hasCustomerLocation: !!customer.location,
+      hasCustomerCoords: !!(customer.location && customer.location.coordinates),
+      hasProvider: !!request.provider,
+      hasProviderLocation: !!(request.provider && request.provider.currentLocation),
+      hasProviderCoords: !!(request.provider && request.provider.currentLocation && request.provider.currentLocation.coordinates)
+    });
+      }
+      
+      return requestObj;
+    });
+
+    res.json(requestsWithDistance);
+  } catch (err) {
+    console.error("Error fetching requests:", err);
     res.status(500).json({ msg: "Server error" });
   }
 });
 
+// Helper function for distance calculation
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371; // Earth radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 /* ============================
    5. COMPLETE SERVICE
    → Move to ServiceTaken
 ============================ */
-router.post("/complete/:requestId", async (req, res) => {
+router.post("/complete/:requestId",customerAuth, async (req, res) => {
   try {
-    const request = await ServiceRequest.findById(req.params.requestId);
+     const requestId = req.params.requestId;
+    console.log("Completing request:", requestId);
+    if (!req.user || !req.user.id) {
+      console.log("❌ No user found in request after auth middleware");
+      return res.status(401).json({ msg: "User not authenticated" });
+    }
+    
+    console.log("✅ Authenticated user ID:", req.user.id);
+    const request = await ServiceRequest.findById(requestId);
 
     if (!request)
       return res.status(404).json({ msg: "Request not found" });
+     // Check if the request belongs to the authenticated customer
+    if (request.customer.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ msg: "Unauthorized: This request doesn't belong to you" });
+    }
 
-    await ServiceTaken.create({
-      customer: request.customer,
-      provider: request.provider,
+    // Check if request is already completed
+    if (request.status === "completed") {
+      return res.status(400).json({ msg: "Request already completed" });
+    }
+     if (request.status !== "accepted") {
+      console.log("❌ Request cannot be completed - status is:", request.status);
+      return res.status(400).json({ 
+        msg: `Request cannot be completed because it is ${request.status}. Only accepted requests can be completed.` 
+      });
+    }
+     let location = request.location;
+    
+    // If request doesn't have location, try to get from customer
+    if (!location || !location.coordinates) {
+      const customer = await Customer.findById(request.customer._id);
+      if (customer && customer.location && customer.location.coordinates) {
+        location = customer.location;
+      } else {
+        // If still no location, use default or throw error
+        return res.status(400).json({ 
+          msg: "Location not available for this service. Please update your location." 
+        });
+      }
+    }
+    const serviceTakenData = {
+      customer: request.customer._id,
+      provider: request.provider._id,
       service: request.service,
+       location: {
+        type: "Point",
+        coordinates: location.coordinates
+      },
       completedAt: new Date(),
-      completedBy: "customer"
-    });
-
-    await ServiceRequest.findByIdAndDelete(request._id);
+      completedBy: "customer",
+    };
+    const serviceTaken = await ServiceTaken.create(serviceTakenData);
+    console.log("✅ ServiceTaken created with ID:", serviceTaken._id);
+      request.status = "completed";
+    request.completedAt = new Date();
+    await request.save();
+    try {
      const io = req.app.get("io");
-    io.to(request.provider.toString()).emit("service-completed", {
-      requestId: request._id
-    });
+    const provider = await ServiceProvider.findById(request.provider).select("socketId");
+      if (provider && provider.socketId) {
+        io.to(provider.socketId).emit("service-completed", {
+          requestId: request._id,
+          message: "Service has been marked as completed by customer"
+        });
+      }
+    } catch (socketErr) {
+      console.log("Socket notification error (non-critical):", socketErr.message);
+    }
 
-    res.json({ msg: "Service completed" });
-  } catch {
+    res.json({  msg: "Service completed successfully",
+      serviceTakenId: serviceTaken._id 
+      
+     });
+  } catch (err) {
+    console.error("Error completing service:", err);
     res.status(500).json({ msg: "Server error" });
   }
 });
@@ -277,7 +393,7 @@ router.post("/complete/:requestId", async (req, res) => {
 /* ============================
    6. CUSTOMER NOTIFICATIONS
 ============================ */
-router.get("/notifications/:customerId", async (req, res) => {
+router.get("/notifications/:customerId",customerAuth, async (req, res) => {
   const notifications = await Notification.find({
     user: req.user.id
   }).sort({ createdAt: -1 });
@@ -329,4 +445,39 @@ router.get("/rejected", customerAuth, async (req, res) => {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
 });
+/* ============================
+   7. GET COMPLETED REQUESTS
+   → Get only completed requests for customer
+============================ */
+router.get("/completed-requests/:customerId", async (req, res) => {
+  try {
+    const customerId = req.params.customerId;
+    console.log("📋 Fetching completed requests for customer:", customerId);
+    
+    const requests = await ServiceRequest.find({
+      customer: customerId,
+      status: "completed"
+    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio isOnline")
+      .sort({ completedAt: -1 }); // Most recent first
+    
+    console.log(`✅ Found ${requests.length} completed requests`);
+    
+    // Add completedAt to the response if not present
+    const requestsWithDates = requests.map(req => {
+      const reqObj = req.toObject();
+      if (!reqObj.completedAt) {
+        reqObj.completedAt = reqObj.updatedAt || reqObj.createdAt;
+      }
+      return reqObj;
+    });
+    
+    res.json(requestsWithDates);
+    
+  } catch (err) {
+    console.error("❌ Error fetching completed requests:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+
 module.exports = router;

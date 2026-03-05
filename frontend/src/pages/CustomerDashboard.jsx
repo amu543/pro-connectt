@@ -99,6 +99,11 @@ const customerService = {
     const response = await api.get(`/customer/request/my-requests/${customerId}`);
     return response.data;
   },
+    getCompletedRequests: async (customerId) => {
+    const response = await api.get(`/customer/request/completed-requests/${customerId}`);
+    return response.data;
+  },
+  
 
   sendRequest: async (providerId, serviceType) => {
     const response = await api.post("/customer/request/send-request", {
@@ -124,6 +129,12 @@ updateLocation: async (latitude, longitude) => {
   },
 
   completeRequest: async (requestId) => {
+    const token = localStorage.getItem("token");
+  console.log("Token in completeRequest:", token ? "Present" : "MISSING");
+  
+  if (!token) {
+    throw new Error("No authentication token found");
+  }
     const response = await api.post(`/customer/request/complete/${requestId}`);
     return response.data;
   },
@@ -213,10 +224,14 @@ export default function CustomerDashboard() {
     try {
       if (!profile._id) return;
       setLoading(true);
-      const data = await customerService.getRequests(profile._id);
-      setRequests(data);
-      const completed = data.filter(r => r.status === "completed");
-      setCompletedServices(completed);
+      // Get active requests (pending & accepted)
+    const activeData = await customerService.getRequests(profile._id);
+    setRequests(activeData);
+    
+    // Get completed requests separately
+    const completedData = await customerService.getCompletedRequests(profile._id);
+    setCompletedServices(completedData);
+      
       setError("");
     } catch (err) {
       console.error("Error fetching requests:", err);
@@ -304,7 +319,12 @@ export default function CustomerDashboard() {
       // Store userId in localStorage for location updates
       if (data._id) {
         localStorage.setItem("userId", data._id);
-      }
+    
+      // store user object in localstorage
+      localStorage.setItem("user", JSON.stringify(data));
+      console.log("✅ User stored in localStorage from profile fetch:", data.email);
+    }
+
       
       // Update location AFTER profile loads
       if (navigator.geolocation && data._id) {
@@ -345,6 +365,28 @@ export default function CustomerDashboard() {
   // Mark request as completed
   const handleCompleteRequest = async (requestId, providerName) => {
     try {
+       const token = localStorage.getItem("token");
+    console.log("Token from localStorage:", token ? `Present (length: ${token.length})` : "MISSING");
+    
+    if (!token) {
+      console.error("No token found in localStorage!");
+      alert("You are not logged in. Please login again.");
+      navigate("/login");
+      return;
+    }
+    
+    // Log user info if available
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        console.log("Current user:", user.email || user.fullName || user._id);
+      } catch (e) {
+        console.log("Could not parse user data");
+      }
+    }
+    
+    setLoading(true);
       await customerService.completeRequest(requestId);
       alert(`Marked ${providerName}'s request as completed!`);
       // Refresh requests
@@ -732,14 +774,14 @@ export default function CustomerDashboard() {
                                 <div className="flex items-start gap-4 flex-1">
                                   <div className="relative shrink-0">
                                     <div className="w-16 h-16 rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
-                                      {getInitials(provider.FullName || provider.name)}
+                                      {getInitials(provider.fullName || provider.name)}
                                     </div>
                                     <div className={`absolute bottom-1 right-1 w-3 h-3 rounded-full border-2 border-white ${provider.isOnline ? 'bg-green-500' : 'bg-gray-400'}`} />
                                   </div>
 
                                   <div className="flex-1 min-w-0">
                                     <div className="flex flex-wrap items-center gap-3 mb-2">
-                                      <h2 className="text-lg font-bold text-gray-900">{provider.FullName || provider.name || "Unknown"}</h2>
+                                      <h2 className="text-lg font-bold text-gray-900">{provider.fullName || provider.name || "Unknown"}</h2>
                                       <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                                         request.status === "pending" ? "bg-yellow-100 text-yellow-800" :
                                         request.status === "accepted" ? "bg-green-100 text-green-800" :
@@ -757,28 +799,31 @@ export default function CustomerDashboard() {
                                     <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
                                       <span className="flex items-center gap-1">
                                         <MapPin size={12} />
-                                        {request.distance || "N/A"}
+                                       {provider.distance ? provider.distance : 
+                                        provider.distanceInKm ? `${provider.distanceInKm} km` : 
+                                          provider.currentLocation ? "Location available" : 
+                                                "N/A"}
                                       </span>
                                       <span className="flex items-center gap-1">
                                         <Award size={12} />
-                                        {provider["Year of Experience"] || "N/A"}
+                                        {provider.yearsOfExperience || "N/A"}
                                       </span>
                                     </div>
                                     
-                                    <p className="text-gray-600 text-sm mb-3 line-clamp-2">{provider["Short Bio"] || "No bio available"}</p>
+                                    <p className="text-gray-600 text-sm mb-3 line-clamp-2">{provider.shortBio || "No bio available"}</p>
                                     
                                     <div className="flex flex-wrap gap-1.5 mb-3">
-                                      {provider["Skills / Expertise"]?.slice(0, 3).map((skill, i) => (
+                                      {provider.skillsExpertise?.slice(0, 3).map((skill, i) => (
                                         <span
                                           key={i}
                                           className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs border border-gray-200"
                                         >
-                                          {skill}
+                                         {typeof skill === 'object' ? skill.name || JSON.stringify(skill) : skill}
                                         </span>
                                       ))}
-                                      {provider["Skills / Expertise"]?.length > 3 && (
+                                      {provider.skillsExpertise?.length > 3 && (
                                         <span className="px-2 py-1 bg-gray-50 text-gray-500 rounded text-xs border border-gray-200">
-                                          +{provider["Skills / Expertise"].length - 3} more
+                                          +{provider.skillsExpertise.length - 3} more
                                         </span>
                                       )}
                                     </div>
@@ -798,7 +843,7 @@ export default function CustomerDashboard() {
                                   )}
                                   {request.status === "accepted" && (
                                     <button
-                                      onClick={() => handleCompleteRequest(request._id, provider.FullName)}
+                                      onClick={() => handleCompleteRequest(request._id, provider.fullName)}
                                       className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium border border-gray-300"
                                     >
                                       <FaCheckCircle size={12} />
@@ -869,7 +914,7 @@ export default function CustomerDashboard() {
                                     <div className="mt-4 pt-4 border-t border-gray-200">
                                       <h4 className="font-medium text-gray-700 mb-2 text-sm">All Skills</h4>
                                       <div className="flex flex-wrap gap-2">
-                                        {provider["Skills / Expertise"].map((skill, i) => (
+                                      {provider.skillsExpertise.map((skill, i) => (
                                           <span
                                             key={i}
                                             className="px-3 py-1.5 bg-white text-gray-700 rounded-lg text-xs font-medium border border-gray-300"
@@ -1244,13 +1289,13 @@ function ServiceReviewCard({ service }) {
             {/* Provider Info with Profile Picture */}
             <div className="shrink-0">
               <div className="w-16 h-16 rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
-                {getInitials(provider.FullName || provider.name)}
+                {getInitials(provider.fullName || provider.name)}
               </div>
             </div>
 
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-3 mb-2">
-                <h3 className="text-lg font-bold text-gray-900">{provider.FullName || provider.name || "Unknown Provider"}</h3>
+                <h3 className="text-lg font-bold text-gray-900">{provider.fullName || provider.name || "Unknown Provider"}</h3>
                 <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
                   {service.service || "Service"}
                 </span>
@@ -1264,22 +1309,22 @@ function ServiceReviewCard({ service }) {
               <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
                 <span className="flex items-center gap-1">
                   <Award size={12} />
-                  {provider["Year of Experience"] || "N/A"}
+                  {provider.yearsOfExperience || provider.experience || "N/A"}
                 </span>
                 <span className="flex items-center gap-1">
                   <Calendar size={12} />
-                  Completed on {new Date(service.updatedAt || service.createdAt).toLocaleDateString()}
+                  Completed on {new Date(service.completedAt || service.updatedAt || service.createdAt).toLocaleDateString()}
                 </span>
               </div>
               
               {/* Skills */}
               <div className="flex flex-wrap gap-1.5">
-                {provider["Skills / Expertise"]?.slice(0, 5).map((skill, i) => (
+                  {(provider.skillsExpertise || provider.skills || []).slice(0, 5).map((skill, i) => (
                   <span
                     key={i}
                     className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs border border-gray-200"
                   >
-                    {skill}
+                    {typeof skill === 'object' ? skill.name || JSON.stringify(skill) : skill}
                   </span>
                 ))}
               </div>
@@ -1292,10 +1337,11 @@ function ServiceReviewCard({ service }) {
           onClick={() =>
             navigate(`/review/${service._id}`, {
               state: {
-                provider: provider.FullName || provider.name,
+                providerId: provider._id,
+                provider: provider.fullName || provider.name,
                 service: service.service,
-                date: service.updatedAt || service.createdAt,
-                skills: provider["Skills / Expertise"] || []
+                date: service.completedAt || service.updatedAt || service.createdAt,
+                skills: provider.skillsExpertise || provider.skills || []
               },
             })
           }

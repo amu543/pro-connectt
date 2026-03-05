@@ -164,7 +164,10 @@ io.on("connection", (socket) => {
   });
 });
  
-
+console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
+if (process.env.JWT_SECRET) {
+  console.log("JWT_SECRET length:", process.env.JWT_SECRET.length);
+}
 // Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀  Server running on http://localhost:${PORT}`));
