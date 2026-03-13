@@ -60,13 +60,30 @@ const SERVICES = [
 
   const API_BASE_URL = "http://localhost:5000/api";
 const SERVICE_NAME_MAPPING = {
-  'home-tutors': 'Home Tutors',      // Map URL slug to exact DB value
-  'home tutors': 'Home Tutors',      // Also map space version
+  'home-tutors': 'Home Tutors',
+  'home tutors': 'Home Tutors',
   'hometutors': 'Home Tutors',
   'plumber': 'Plumber',
   'electrician': 'Electrician',
   'painter': 'Painter',
-  // Add all other services...
+  'house-help': 'House Help',
+  'house help': 'House Help',
+  'babysitters': 'Babysitters',
+  'sofa-carpet-cleaner': 'Sofa/Carpet Cleaner',
+  'sofa/carpet cleaner': 'Sofa/Carpet Cleaner',
+  'event-decorators': 'Event Decorators',
+  'event decorators': 'Event Decorators',
+  'carpenter': 'Carpenter',
+  'photographer': 'Photographer',
+  'band-baja': 'Band Baja',
+  'band baja': 'Band Baja',
+  'private-chef': 'Private Chef',
+  'private chef': 'Private Chef',
+  'locksmith': 'Locksmith',
+  'laundry': 'Laundry',
+  'movers-packers': 'Movers & Packers',
+  'movers & packers': 'Movers & Packers',
+  'waterproofing': 'Waterproofing'
 };
 // API Service functions
 const api = axios.create({
@@ -203,6 +220,10 @@ export default function CustomerDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [phone, setPhone] = useState("");
   const [profilePic, setProfilePic] = useState("");
+  const [province, setProvince] = useState("");
+  const [district, setDistrict] = useState("");
+  const [municipality, setMunicipality] = useState("");
+  const [wardNo, setWardNo] = useState("");
   const [profile, setProfile] = useState({});
   const [requests, setRequests] = useState([]);
   const [completedServices, setCompletedServices] = useState([]);
@@ -210,6 +231,7 @@ export default function CustomerDashboard() {
   const [expandedIds, setExpandedIds] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [initialFetchDone, setInitialFetchDone] = useState(false); 
 
   // Updated selectedCategory when URL changes
   useEffect(() => {
@@ -314,8 +336,17 @@ export default function CustomerDashboard() {
       const data = await customerService.getProfile();
       setProfile(data);
       setPhone(data.phone || "");
-      setProfilePic(data.profilePhoto || "https://via.placeholder.com/192x192/4b5563/ffffff?text=AA");
-      
+       if (data.profilePhoto) {
+      setProfilePic(data.profilePhoto);
+      console.log("Setting profile photo:", data.profilePhoto);
+    } else {
+      setProfilePic("");
+      console.log("No profile photo found");
+    }
+      setProvince(data.province || "");
+      setDistrict(data.district || "");
+      setMunicipality(data.municipality || "");
+      setWardNo(data.wardNo || "");
       // Store userId in localStorage for location updates
       if (data._id) {
         localStorage.setItem("userId", data._id);
@@ -359,6 +390,7 @@ export default function CustomerDashboard() {
       }
     } finally {
       setLoading(false);
+      setInitialFetchDone(true);
     }
   };
 
@@ -409,7 +441,9 @@ export default function CustomerDashboard() {
       await customerService.updateProfile(updateData);
       setIsEditing(false);
       alert("Profile updated successfully");
-      fetchProfile(); // Refresh profile
+      const updatedProfile = { ...profile, ...updateData };
+    localStorage.setItem("user", JSON.stringify(updatedProfile));
+       await fetchProfile(); // Refresh profile
     } catch (err) {
       console.error("Error updating profile:", err);
       alert("Failed to update profile");
@@ -473,10 +507,33 @@ export default function CustomerDashboard() {
   const handleProfilePicChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("File size must be less than 5MB");
+        return;
+      }
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert("Please select an image file");
+        return;
+      }
       const reader = new FileReader();
-      reader.onload = () => setProfilePic(reader.result);
+      reader.onload = () => {
+        setProfilePic(reader.result);
+       setProfile(prev => ({
+          ...prev,
+          profilePhoto: reader.result
+        }));
+      };
       reader.readAsDataURL(file);
     }
+  };
+  // Remove profile picture
+  const handleRemovePhoto = () => {
+    setProfilePic("");
+    setProfile(prev => ({ ...prev, profilePhoto: "" }));
+    const updatedProfile = { ...profile, profilePhoto: "" };
+  localStorage.setItem("user", JSON.stringify(updatedProfile));
   };
 
   // Format phone number for display
@@ -529,13 +586,41 @@ export default function CustomerDashboard() {
       <div className="lg:w-80 bg-white p-6 shadow-lg border-r border-gray-200 flex flex-col">
         <div className="text-center mb-8">
           <div className="relative w-32 h-32 mx-auto mb-4">
-            <div className="w-full h-full rounded-full bg-gray-700 flex items-center justify-center text-white text-4xl font-bold shadow-lg">
-              {getInitials(profile.fullName || profile.name)}
-            </div>
-            <div className="absolute -bottom-2 right-2 w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center shadow-md border-4 border-white">
+             {/* Profile Photo - Show loading spinner while fetching */}
+      {loading  && !profilePic  ? (
+        <div className="w-full h-full rounded-full bg-gray-200 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+        </div>
+      ) : (
+        <>
+            {profilePic ?(
+              <img
+              key={profilePic}
+                src={profilePic.startsWith('data:') ? profilePic : `${profilePic}${profilePic.includes('?') ? '&' : '?'}t=${Date.now()}`}
+                alt={profile.fullName || "Profile"}
+                className="w-full h-full rounded-full object-cover shadow-lg"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.style.display = 'none';
+                  const parent = e.target.parentElement;
+            const initials = getInitials(profile.fullName || profile.name);
+            const div = document.createElement('div');
+            div.className = "w-full h-full rounded-full bg-gray-700 flex items-center justify-center text-white text-4xl font-bold shadow-lg";
+            div.textContent = initials;
+            parent.appendChild(div);
+              }}
+            />
+             ) : (
+              <div className="w-full h-full rounded-full bg-gray-700 flex items-center justify-center text-white text-4xl font-bold shadow-lg">
+                      {getInitials(profile.fullName || profile.name)}
+                    </div>
+                  )}
+                  </>
+      )}
+              <div className="absolute -bottom-2 right-2 w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center shadow-md border-4 border-white">
               <User size={18} className="text-white" />
             </div>
-          </div>
+            </div>
           <h2 className="text-2xl font-bold text-gray-800">{profile.fullName || profile.name || "Customer"}</h2>
           <p className="text-sm text-gray-600 mt-1 flex items-center justify-center gap-1">
             <Mail size={14} />
@@ -596,7 +681,7 @@ export default function CustomerDashboard() {
 
       {/* Main Content */}
       <div className="flex-1 p-6 lg:p-8">
-        {loading ? (
+        {loading && !initialFetchDone ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
@@ -675,6 +760,25 @@ export default function CustomerDashboard() {
                         </h3>
                         
                         <div className="space-y-4">
+                          {/* Address Details */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">Province</p>
+                              <p className="text-gray-800 font-medium">{province || "Not specified"}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">District</p>
+                              <p className="text-gray-800 font-medium">{district || "Not specified"}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">Municipality</p>
+                              <p className="text-gray-800 font-medium">{municipality || "Not specified"}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">Ward Number</p>
+                              <p className="text-gray-800 font-medium">{wardNo || "Not specified"}</p>
+                            </div>
+                          </div>
                           <div>
                             <p className="text-sm text-gray-600 mb-1">GPS Coordinates</p>
                             <p className="text-gray-800 font-medium">
@@ -706,6 +810,13 @@ export default function CustomerDashboard() {
                               className="hidden"
                               onChange={handleProfilePicChange}
                             />
+                             {profilePic ? (
+                          <img
+                            src={profilePic}
+                            alt="Profile Preview"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
                             <div className="text-center p-4">
                               <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-600 flex items-center justify-center">
                                 <Edit2 size={24} className="text-white" />
@@ -713,17 +824,30 @@ export default function CustomerDashboard() {
                               <p className="text-sm font-medium text-gray-700">Click to upload</p>
                               <p className="text-xs text-gray-500 mt-1">PNG, JPG Max-5MB</p>
                             </div>
+                        )}
                           </label>
                         ) : (
+                          <>
+                          {profilePic ? (
                           <img
-                            src={profilePic}
-                            alt="Profile"
+                            key={profilePic}
+            src={profilePic.startsWith('data:') ? profilePic : `${profilePic}${profilePic.includes('?') ? '&' : '?'}t=${Date.now()}`}
+                            alt={profile.fullName || "Profile"}
                             className="w-full h-full object-cover"
                             onError={(e) => {
                               e.target.onerror = null;
-                              e.target.src = "https://via.placeholder.com/192x192/4b5563/ffffff?text=" + getInitials(profile.fullName);
+                              e.target.src = `https://via.placeholder.com/192x192/4b5563/ffffff?text=${getInitials(profile.fullName)}`;
                             }}
                           />
+                          ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">
+                          <span className="text-white text-5xl font-bold">
+                          {getInitials(profile.fullName || profile.name)}
+                          </span>
+                          </div>
+                            )}
+                          </>
+                          
                         )}
                       </div>
                       {!isEditing && (
@@ -731,6 +855,14 @@ export default function CustomerDashboard() {
                           Click "Edit Profile" to update your photo
                         </p>
                       )}
+                      {isEditing && profilePic && (
+                      <button
+                        onClick={handleRemovePhoto}
+                        className="mt-2 text-sm text-red-600 hover:text-red-700"
+                        >
+                        Remove Photo
+                        </button>
+                        )}
                     </div>
                   </div>
                 </div>

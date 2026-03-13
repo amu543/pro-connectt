@@ -341,24 +341,252 @@ async function verifyCV(cvPath, fullName, service, skills, yearsOfExperience) {
       cvVerified = false;
     }
 
-
+    const normalizedCVText = cvText.toLowerCase();
     // Case-insensitive checks
     // Name check
-    if (cvText.includes(fullName.toLowerCase())) {
+    if (normalizedCVText.includes(fullName.toLowerCase())) {
       cvVerificationDetails.nameMatched = true;
     } else {
       cvVerified = false;
     }
 
     // Service check
-    if (cvText.includes(service.toLowerCase())) {
+    const serviceKeywords = {
+  'Babysitters': [
+    'baby', 'babies', 'child', 'children', 'kid', 'kids',
+    'caregiver', 'care giver', 'nanny', 'au pair',
+    'childcare', 'child care', 'infant', 'toddler',
+    'babysitting', 'childminding', 'child minding'
+  ],
+  'Plumber': [
+    'plumb', 'pipe', 'drain', 'tap', 'faucet', 'toilet',
+    'bathroom', 'kitchen', 'water', 'leak', 'clog',
+    'plumbing', 'pipeline', 'sanitary','plumbering', 'sewer', 'vent', 'valve', 'fixture',
+    'garbage disposal', 'water heater', 'sump pump', 'backflow', 'pressure regulator'
+  ],
+  'Electrician': [
+    'electric', 'electrical', 'wire', 'wiring', 'circuit',
+    'light', 'fan', 'switch', 'socket', 'fuse',
+    'breaker', 'voltage', 'power'
+  ],
+  'Home Tutors': [
+    'tutor', 'teach', 'teacher', 'teaching', 'education',
+    'student', 'subject', 'math', 'science', 'english','social',
+    'homework', 'lesson', 'learning', 'coach', 'instructor'
+  ],
+  'House Help': [
+    'house help', 'maid', 'cleaner', 'cleaning', 'housekeeping',
+    'domestic', 'household', 'home help', 'cook', 'cooking',
+    'kitchen work', 'house work'
+  ],
+   'Painter': [
+    'paint', 'painter', 'painting', 'wall paint', 'color', 'colour',
+    'brush', 'roller', 'spray paint', 'primer', 'varnish', 'lacquer',
+    'enamel', 'emulsion', 'distemper', 'texture paint', 'wallpaper',
+    'interior paint', 'exterior paint', 'house painter', 'commercial painting',
+    'residential painting', 'paint mixing', 'color matching', 'surface preparation',
+    'putty', 'plaster', 'sandpaper', 'masking tape', 'drop cloth',
+    'paint sprayer', 'airless sprayer', 'faux finish', 'stenciling',
+    'decorative painting', 'furniture painting', 'cabinet painting',
+    'ceiling painting', 'wall painting', 'gate painting', 'fence painting',
+    'waterproofing paint', 'anti-rust paint', 'wood paint', 'metal paint'
+  ],
+
+  'Sofa/Carpet Cleaner': [
+    'sofa clean', 'carpet clean', 'upholstery clean', 'furniture clean',
+    'sofa cleaning', 'carpet cleaning', 'upholstery cleaning', 'rug cleaning',
+    'steam cleaning', 'dry cleaning', 'shampooing', 'extraction cleaning',
+    'stain removal', 'spot cleaning', 'odor removal', 'deodorizing',
+    'fabric protection', 'scotchgard', 'anti-allergen', 'deep cleaning',
+    'vacuum', 'extractor', 'steam cleaner', 'cleaning machine',
+    'leather cleaning', 'leather conditioning', 'microfiber cleaning',
+    'couch cleaning', 'sectional cleaning', 'chair cleaning', 'mattress cleaning',
+    'area rug cleaning', 'persian rug cleaning', 'oriental rug cleaning',
+    'commercial carpet cleaning', 'residential carpet cleaning',
+    'pet stain removal', 'pet odor removal', 'traffic lane cleaning',
+    'bonnet cleaning', 'encapsulation', 'hot water extraction'
+  ],
+
+  'Event Decorators': [
+    'event decor', 'party decor', 'wedding decor', 'decoration',
+    'event planner', 'party planner', 'wedding planner', 'coordinator',
+    'balloon decor', 'flower arrangement', 'floral design', 'centerpieces',
+    'backdrop', 'stage decoration', 'draping', 'fabric draping',
+    'lighting decor', 'fairy lights', 'string lights', 'chandeliers',
+    'table setting', 'table linen', 'chair covers', 'sashes', 'table runners',
+    'theme decoration', 'concept design', 'color scheme', 'ambiance',
+    'props', 'rental items', 'arch', 'altar', 'mandap', 'stage setup',
+    'reception decor', 'ceremony decor', 'birthday party', 'anniversary',
+    'corporate event', 'gala dinner', 'product launch', 'festival decor',
+    'tent decoration', 'ceiling decor', 'wall decor', 'entrance decor',
+    'photo booth', 'backdrop stand', 'signage', 'welcome sign',
+    'candelabras', 'vases', 'candles', 'lanterns', 'pillars'
+  ],
+
+  'Carpenter': [
+    'carpenter', 'woodworking', 'wood work', 'furniture making',
+    'cabinet making', 'cabinet maker', 'joinery', 'joiner',
+    'framing', 'rough carpentry', 'finish carpentry', 'trim work',
+    'molding', 'crown molding', 'baseboard', 'chair rail', 'wainscoting',
+    'door installation', 'window installation', 'frame installation',
+    'deck building', 'fence building', 'shed building', 'structure building',
+    'cabinet installation', 'shelf installation', 'closet installation',
+    'countertop installation', 'laminate installation', 'plywood',
+    'timber', 'lumber', 'hardwood', 'softwood', 'engineered wood',
+    'saw', 'table saw', 'circular saw', 'miter saw', 'jigsaw', 'router',
+    'drill', 'sander', 'planer', 'jointer', 'chisel', 'hammer', 'nail gun',
+    'measuring', 'cutting', 'shaping', 'assembling', 'installing',
+    'repair furniture', 'furniture restoration', 'refinishing',
+    'custom furniture', 'built-in cabinets', 'wardrobe', 'kitchen cabinets',
+    'bookshelves', 'wall paneling', 'wooden flooring', 'parquet'
+  ],
+
+  'Photographer': [
+    'photographer', 'photography', 'photo shoot', 'photoshoot',
+    'event photography', 'wedding photography', 'portrait photography',
+    'family photos', 'couple shoot', 'engagement shoot', 'maternity shoot',
+    'newborn photography', 'baby photography', 'kids photography',
+    'graduation photos', 'corporate photography', 'headshot', 'professional headshot',
+    'product photography', 'food photography', 'real estate photography',
+    'fashion photography', 'model photography', 'candid photography',
+    'traditional photography', 'posed photography', 'photo editing',
+    'photo retouching', 'photo enhancement', 'color correction',
+    'album design', 'photo album', 'wedding album', 'photo book',
+    'camera', 'dslr', 'mirrorless', 'lens', 'prime lens', 'zoom lens',
+    'lighting', 'studio lighting', 'flash', 'speedlight', 'softbox',
+    'backdrop', 'photo studio', 'outdoor shoot', 'indoor shoot',
+    'videography', 'video recording', 'cinematography', 'drone photography',
+    'aerial photography', 'photo printing', 'canvas print', 'framed print'
+  ],
+
+  'Band Baja': [
+    'band baja', 'band party', 'wedding band', 'musical band',
+    'live music', 'live band', 'music performance', 'musician',
+    'instrumentalist', 'vocalist', 'singer', 'dhol', 'dholak',
+    'dholki', 'nagara', 'tyamko', 'damaha', 'jhyali', 'khaijadi',
+    'madal', 'tabla', 'drums', 'drum set', 'percussion', 'percussionist',
+    'trumpet', 'trombone', 'saxophone', 'brass band', 'brass instruments',
+    'clarinet', 'flute', 'shehnai', 'harmonium', 'keyboard', 'piano',
+    'guitar', 'bass guitar', 'violin', 'cello', 'string instruments',
+    'dj', 'disc jockey', 'sound system', 'speakers', 'amplifier', 'mixing',
+    'mc', 'host', 'anchoring', 'procession', 'baraat', 'julus',
+    'wedding procession', 'cultural program', 'traditional music',
+    'folk music', 'modern music', 'party music', 'wedding songs'
+  ],
+
+  'Private Chef': [
+    'private chef', 'personal chef', 'chef', 'cook', 'home chef',
+    'catering', 'private catering', 'personal catering', 'in-home dining',
+    'meal preparation', 'cooking', 'food preparation', 'menu planning',
+    'custom menu', 'personalized menu', 'special diet', 'dietary restrictions',
+    'vegetarian cooking', 'vegan cooking', 'gluten-free', 'allergy-friendly',
+    'multi-course meal', 'fine dining', 'gourmet cooking', 'culinary',
+    'culinary arts', 'culinary skills', 'professional cooking',
+    'restaurant experience', 'hotel experience', 'catering experience',
+    'food styling', 'plating', 'presentation', 'kitchen management',
+    'ingredient sourcing', 'fresh ingredients', 'local ingredients',
+    'international cuisine', 'italian cuisine', 'french cuisine',
+    'asian cuisine', 'chinese cuisine', 'indian cuisine', 'nepali cuisine',
+    'thai cuisine', 'continental cuisine', 'fusion cuisine',
+    'birthday dinner', 'anniversary dinner', 'date night', 'family dinner',
+    'dinner party', 'holiday meal', 'thanksgiving', 'christmas dinner',
+    'special occasion', 'event catering', 'private event'
+  ],
+
+  'Locksmith': [
+    'locksmith', 'lock repair', 'lock installation', 'door lock',
+    'window lock', 'padlock', 'deadbolt', 'mortise lock', 'rim lock',
+    'electronic lock', 'digital lock', 'smart lock', 'keypad lock',
+    'biometric lock', 'fingerprint lock', 'card lock', 'hotel lock',
+    'safe lock', 'cabinet lock', 'drawer lock', 'furniture lock',
+    'key making', 'key cutting', 'duplicate key', 'spare key',
+    'key duplication', 'key programming', 'transponder key',
+    'car key', 'vehicle lock', 'automotive locksmith', 'car unlocking',
+    'lockout service', 'home lockout', 'car lockout', 'emergency lockout',
+    '24 hour locksmith', 'emergency service', 'lock rekey', 'rekeying',
+    'lock change', 'lock replacement', 'lock repair service',
+    'master key system', 'keyless entry', 'security upgrade',
+    'high security lock', 'anti-theft lock', 'safety lock',
+    'safe opening', 'safe combination change', 'safe repair'
+  ],
+
+  'Laundry': [
+    'laundry', 'laundry service', 'wash and fold', 'wash & fold',
+    'dry cleaning', 'dryclean', 'wet cleaning', 'garment care',
+    'clothes washing', 'clothes cleaning', 'fabric care',
+    'shirt ironing', 'pants ironing', 'clothes ironing', 'pressing',
+    'steam ironing', 'professional ironing', 'stain removal',
+    'spot treatment', 'delicate care', 'hand wash', 'machine wash',
+    'cold wash', 'warm wash', 'hot wash', 'sanitizing', 'disinfecting',
+    'bleach', 'color safe bleach', 'fabric softener', 'detergent',
+    'washing machine', 'dryer', 'tumble dry', 'air dry', 'line dry',
+    'folded clothes', 'hanging delivery', 'garment bag', 'protective bag',
+    'suit cleaning', 'jacket cleaning', 'coat cleaning', 'dress cleaning',
+    'shirt cleaning', 'blouse cleaning', 'pant cleaning', 'jean cleaning',
+    'bed sheets', 'linens', 'towels', 'tablecloth', 'napkins',
+    'curtain cleaning', 'drapery cleaning', 'blanket cleaning',
+    'comforter cleaning', 'duvet cleaning', 'pillow cleaning',
+    'pickup and delivery', 'laundry pickup', 'free pickup', 'delivery service'
+  ],
+
+  'Movers & Packers': [
+    'movers', 'packers', 'moving company', 'relocation', 'house shifting',
+    'office shifting', 'home moving', 'apartment moving', 'local moving',
+    'long distance moving', 'interstate moving', 'international moving',
+    'packing service', 'unpacking service', 'packing supplies',
+    'moving boxes', 'cardboard boxes', 'box packing', 'furniture wrapping',
+    'furniture moving', 'heavy lifting', 'piano moving', 'safe moving',
+    'appliance moving', 'refrigerator moving', 'washing machine moving',
+    'tv moving', 'electronics moving', 'glass moving', 'mirror moving',
+    'art moving', 'painting moving', 'antique moving', 'valuable items',
+    'loading', 'unloading', 'truck loading', 'truck unloading',
+    'moving truck', 'moving van', 'transportation', 'vehicle transport',
+    'storage', 'storage facility', 'warehouse storage', 'temporary storage',
+    'climate controlled storage', 'fragile items', 'fragile handling',
+    'professional movers', 'trained staff', 'moving crew', 'moving team',
+    'estimate', 'moving quote', 'free quote', 'in-home estimate',
+    'insurance', 'moving insurance', 'damage protection', 'liability coverage'
+  ],
+
+  'Waterproofing': [
+    'waterproofing', 'water proofing', 'damp proofing', 'leakage repair',
+    'water leak repair', 'leak repair', 'pipe leakage', 'roof leakage',
+    'wall leakage', 'ceiling leakage', 'basement leakage', 'terrace leakage',
+    'bathroom leakage', 'kitchen leakage', 'balcony leakage',
+    'roof waterproofing', 'terrace waterproofing', 'balcony waterproofing',
+    'wall waterproofing', 'basement waterproofing', 'foundation waterproofing',
+    'bathroom waterproofing', 'shower waterproofing', 'wet area waterproofing',
+    'water tank waterproofing', 'underground tank', 'overhead tank',
+    'crack repair', 'wall crack repair', 'ceiling crack repair',
+    'expansion joint', 'joint sealing', 'sealant', 'silicone sealant',
+    'waterproof coating', 'waterproof paint', 'bitumen coating',
+    'polyurethane coating', 'epoxy coating', 'acrylic coating',
+    'cementitious coating', 'liquid membrane', 'sheet membrane',
+    'torch on membrane', 'self-adhesive membrane', 'geotextile',
+    'drainage system', 'drain tile', 'sump pump', 'dehumidifier',
+    'mold prevention', 'mildew prevention', 'dampness solution',
+    'hydrostatic pressure', 'positive side waterproofing', 'negative side waterproofing'
+  ]
+};
+ const keywords = serviceKeywords[service] || [service.toLowerCase()];
+    let serviceMatched = false;
+    for (const keyword of keywords) {
+      if (normalizedCVText.includes(keyword.toLowerCase())) {
+        serviceMatched = true;
+        console.log(`✅ Service matched with keyword: "${keyword}"`);
+        break;
+      }
+    }
+
+    if (serviceMatched) {
       cvVerificationDetails.serviceMatched = true;
     } else {
       cvVerified = false;
+      console.log(`❌ Service "${service}" not found in CV. Tried keywords:`, keywords);
     }
 
     // Skills check
-    const normalizedCVText = cvText.toLowerCase();
+  
     skills.forEach(skillObj => {
   const skillName = skillObj.name; // get the string
   if (typeof skillName === "string" && normalizedCVText.includes(skillName.toLowerCase())) {

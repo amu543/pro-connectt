@@ -54,9 +54,9 @@ router.post("/register", async (req, res) => {
       Password: password,
       ["Confirm Password"]: confirmPassword,
       ["Profile Photo"]: profilePhoto,
-       Province: province,
-      District: district,
-      Municipality: municipality,
+       ["Province"]: province,
+      ["District"]: district,
+      ["Municipality"]: municipality,
       ["Ward No"]: wardNo,
     } = req.body;
 
@@ -84,7 +84,11 @@ router.post("/register", async (req, res) => {
       role: "customer",
       otp,
       otpExpires: new Date(Date.now() + 5 * 60 * 1000),
-      isVerified: false
+      isVerified: false,
+       province: province,
+      district: district,
+      municipality: municipality,
+      wardNo: wardNo
     });
 
     await newCustomer.save();

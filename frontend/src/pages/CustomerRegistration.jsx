@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import addresData from "../data/addresData.json";
 
 const API_BASE_URL = "http://localhost:5000/api";
 
@@ -26,6 +27,7 @@ const countryCodes = [
   { code: "+971", label: "UAE" },
 ];
 
+
 const CustomerRegistration = () => {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -36,6 +38,11 @@ const CustomerRegistration = () => {
   const [showVerification, setShowVerification] = useState(false);
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [timer, setTimer] = useState(0);
+
+  //Address state variables
+  const [districts, setDistricts] = useState([]);
+  const [municipalities, setMunicipalities] = useState([]);
+  const [wards, setWards] = useState([]);
   const otpInputRefs = useRef([]);
 
   const [form, setForm] = useState({
@@ -46,6 +53,10 @@ const CustomerRegistration = () => {
     password: "",
     confirmPassword: "",
     profilePhoto: null,
+    province: "",
+    district: "",
+    municipality: "",
+    wardNo: ""
   });
 
   // Timer effect
@@ -100,6 +111,44 @@ const CustomerRegistration = () => {
       setErrors(prev => ({ ...prev, phone: "" }));
     }
   };
+  
+  // Address handlers
+  const handleProvinceChange = (e) => {
+    const prov = e.target.value;
+    setForm((p) => ({ ...p, province: prov, district: "", municipality: "", wardNo: "" }));
+    if (addresData[prov]) {
+      setDistricts(Object.keys(addresData[prov]));
+    } else {
+      setDistricts([]);
+    }
+    setMunicipalities([]);
+    setWards([]);
+  };
+  
+  const handleDistrictChange = (e) => {
+    const dist = e.target.value;
+    setForm((p) => ({ ...p, district: dist, municipality: "", wardNo: "" }));
+    if (addresData[form.province] && addresData[form.province][dist]) {
+      setMunicipalities(Object.keys(addresData[form.province][dist]));
+    } else {
+      setMunicipalities([]);
+    }
+    setWards([]);
+  };
+  
+  const handleMunicipalityChange = (e) => {
+    const mun = e.target.value;
+    setForm((p) => ({ ...p, municipality: mun, wardNo: "" }));
+    if (
+      addresData[form.province] &&
+      addresData[form.province][form.district] &&
+      addresData[form.province][form.district][mun]
+    ) {
+      setWards(addresData[form.province][form.district][mun]);
+    } else {
+      setWards([]);
+    }
+  };
 
   const handleFile = (e) => {
     const file = e.target.files?.[0] || null;
@@ -132,6 +181,12 @@ const CustomerRegistration = () => {
     
     if (!form.phone) err.phone = "Phone number is required";
     else if (form.phone.length !== 10) err.phone = "Phone must be 10 digits";
+
+    // Address validation
+    if (!form.province) err.province = "Province is required";
+    if (!form.district) err.district = "District is required";
+    if (!form.municipality) err.municipality = "Municipality is required";
+    if (!form.wardNo) err.wardNo = "Ward number is required";
     
     if (!form.password) err.password = "Password is required";
     else if (form.password.length < 8) err.password = "Password must be at least 8 characters";
@@ -203,6 +258,10 @@ const CustomerRegistration = () => {
         "Phone": form.countryCode + form.phone,
         "Password": form.password,
         "Confirm Password": form.confirmPassword,
+        "Province": form.province,
+        "District": form.district,
+        "Municipality": form.municipality,
+        "Ward No": form.wardNo,
         "Profile Photo": ""
       };
 
@@ -405,7 +464,7 @@ const CustomerRegistration = () => {
             </div>
           )}
 
-          {/* Single step form */}
+          {/* Form fields grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Left column: form fields */}
             <div className="space-y-4">
@@ -439,6 +498,40 @@ const CustomerRegistration = () => {
                 />
                 {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
               </div>
+
+              {/* Phone field moved here - before password */}
+              <div>
+                <label className="text-sm font-medium text-slate-700">Phone <span className="text-red-500 ml-1">*</span></label>
+                <div className="flex gap-3 items-center">
+                  <div className="shrink-0">
+                    <select
+                      name="countryCode"
+                      value={form.countryCode}
+                      onChange={handleInput}
+                      className="p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800 min-w-[100px]"
+                      disabled={submitting}
+                    >
+                      {countryCodes.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <input
+                    value={form.phone}
+                    onChange={handlePhoneChange}
+                    className="flex-1 p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800 min-w-[150px]"
+                    placeholder="9800000000"
+                    disabled={submitting}
+                    type="tel"
+                    maxLength="10"
+                  />
+                </div>
+                {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+                <p className="text-xs text-gray-500 mt-1">Currently only Nepali numbers are supported (10 digits)</p>
+              </div>
               
               <div>
                 <label className="text-sm font-medium text-slate-700">
@@ -470,39 +563,6 @@ const CustomerRegistration = () => {
                   disabled={submitting || showVerification}
                 />
                 {errors.confirmPassword && <p className="text-red-500 text-sm mt-1">{errors.confirmPassword}</p>}
-              </div>
-
-              <div>
-                        <label className="text-sm font-medium text-slate-700">Phone <span className="text-red-500 ml-1">*</span></label>
-                        <div className="flex gap-3 items-center">
-                          <div className="shrink-0">
-                            <select
-                              name="countryCode"
-                              value={form.countryCode}
-                              onChange={handleInput}
-                              className="p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800 min-w-[100px]"
-                              disabled={submitting}
-                            >
-                              {countryCodes.map((c) => (
-                                <option key={c.code} value={c.code}>
-                                  {c.code}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <input
-                            value={form.phone}
-                            onChange={handlePhoneChange}
-                            className="flex-1 p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800 min-w-[150px]"
-                            placeholder="9800000000"
-                            disabled={submitting}
-                            type="tel"
-                            maxLength="10"
-                          />
-                        </div>
-                        {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
-                        <p className="text-xs text-gray-500 mt-1">Currently only Nepali numbers are supported (10 digits)</p>
               </div>
             </div>
 
@@ -537,6 +597,88 @@ const CustomerRegistration = () => {
               <p className="text-xs text-gray-400">{fileName(form.profilePhoto)}</p>
               {errors.profilePhoto && <p className="text-red-500 text-sm text-center">{errors.profilePhoto}</p>}
               <p className="text-xs text-gray-400 text-center"> • Max size 5 MB • JPG, PNG</p>
+            </div>
+          </div>
+
+          {/* Address Section */}
+          <div className="border-t border-gray-100 pt-4 mt-4">
+            <h3 className="text-md font-semibold text-slate-800 mb-3">Address Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Province <span className="text-red-500">*</span></label>
+                <select
+                  name="province"
+                  value={form.province}
+                  onChange={handleProvinceChange}
+                  className="w-full p-3 rounded-xl border border-gray-200 bg-white text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  disabled={submitting || showVerification}
+                >
+                  <option value="">Select Province</option>
+                  {Object.keys(addresData).map((prov) => (
+                    <option key={prov} value={prov}>
+                      {prov}
+                    </option>
+                  ))}
+                </select>
+                {errors.province && <p className="text-red-500 text-sm mt-1">{errors.province}</p>}
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium text-slate-700">District <span className="text-red-500">*</span></label>
+                <select
+                  name="district"
+                  value={form.district}
+                  onChange={handleDistrictChange}
+                  className="w-full p-3 rounded-xl border border-gray-200 bg-white text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  disabled={!districts.length || submitting || showVerification}
+                >
+                  <option value="">Select District</option>
+                  {districts.map((dist) => (
+                    <option key={dist} value={dist}>
+                      {dist}
+                    </option>
+                  ))}
+                </select>
+                {errors.district && <p className="text-red-500 text-sm mt-1">{errors.district}</p>}
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium text-slate-700">Municipality <span className="text-red-500">*</span></label>
+                <select
+                  name="municipality"
+                  value={form.municipality}
+                  onChange={handleMunicipalityChange}
+                  className="w-full p-3 rounded-xl border border-gray-200 bg-white text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  disabled={!municipalities.length || submitting || showVerification}
+                >
+                  <option value="">Select Municipality</option>
+                  {municipalities.map((mun) => (
+                    <option key={mun} value={mun}>
+                      {mun}
+                    </option>
+                  ))}
+                </select>
+                {errors.municipality && <p className="text-red-500 text-sm mt-1">{errors.municipality}</p>}
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium text-slate-700">Ward No <span className="text-red-500">*</span></label>
+                <select
+                  name="wardNo"
+                  value={form.wardNo}
+                  onChange={handleInput}
+                  className="w-full p-3 rounded-xl border border-gray-200 bg-white text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  disabled={!wards.length || submitting || showVerification}
+                >
+                  <option value="">Select Ward</option>
+                  {wards.map((w) => (
+                    <option key={w} value={w}>
+                      {w}
+                    </option>
+                  ))}
+                </select>
+                {errors.wardNo && <p className="text-red-500 text-sm mt-1">{errors.wardNo}</p>}
+              </div>
             </div>
           </div>
 

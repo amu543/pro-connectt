@@ -9,6 +9,10 @@ const customerSchema = new mongoose.Schema(
     password: {type: String,required: true },
     profilePhoto: {type: String,default: null },
     role: { type: String, default: "customer" },
+    province: { type: String, default: "" },
+  district: { type: String, default: "" },
+  municipality: { type: String, default: "" },
+  wardNo: { type: String, default: "" },
     // GEOLOCATION
     location: {
       type: { type: String,enum: ["Point"],default: "Point" },
