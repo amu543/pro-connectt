@@ -229,7 +229,7 @@ export default function CustomerDashboard() {
   const [completedServices, setCompletedServices] = useState([]);
   const [providers, setProviders] = useState([]);
   const [expandedIds, setExpandedIds] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [initialFetchDone, setInitialFetchDone] = useState(false); 
 
@@ -245,7 +245,6 @@ export default function CustomerDashboard() {
   const fetchRequests = async () => {
     try {
       if (!profile._id) return;
-      setLoading(true);
       // Get active requests (pending & accepted)
     const activeData = await customerService.getRequests(profile._id);
     setRequests(activeData);
@@ -262,9 +261,7 @@ export default function CustomerDashboard() {
         navigate("/login");
       }
       setError("Failed to load requests");
-    } finally {
-      setLoading(false);
-    }
+    } 
   };
 
   // fetchProviders - uses /customer/request/providers/:service (with fallback)
@@ -273,7 +270,6 @@ export default function CustomerDashboard() {
   console.log("Service type:", typeof service);
   console.log("Service length:", service?.length);
     try {
-      setLoading(true);
       if (!service) {
         setProviders([]);
         return;
@@ -304,9 +300,7 @@ export default function CustomerDashboard() {
       } else {
         setError(`Error loading providers: ${err.message}`);
       }
-    } finally {
-      setLoading(false);
-    }
+    } 
   };
 
   // handleSendRequest - matches /customer/request/send-request
@@ -324,9 +318,7 @@ export default function CustomerDashboard() {
       console.error("Send request error:", err);
       const msg = err.response?.data?.msg || "Failed to send request";
       alert(msg);
-    } finally {
-      setLoading(false);
-    }
+    } 
   };
 
   // fetchProfile
@@ -418,7 +410,7 @@ export default function CustomerDashboard() {
       }
     }
     
-    setLoading(true);
+
       await customerService.completeRequest(requestId);
       alert(`Marked ${providerName}'s request as completed!`);
       // Refresh requests
@@ -456,6 +448,24 @@ export default function CustomerDashboard() {
     if (!token) {
       navigate("/login");
       return;
+    }
+     // Load cached user data immediately for faster display
+    const cachedUser = localStorage.getItem("user");
+    if (cachedUser) {
+      try {
+        const userData = JSON.parse(cachedUser);
+        setProfile(userData);
+        setPhone(userData.phone || "");
+        if (userData.profilePhoto) {
+          setProfilePic(userData.profilePhoto);
+        }
+        setProvince(userData.province || "");
+        setDistrict(userData.district || "");
+        setMunicipality(userData.municipality || "");
+        setWardNo(userData.wardNo || "");
+      } catch (e) {
+        console.log("Error parsing cached user data");
+      }
     }
     fetchProfile();
   }, []);
@@ -587,7 +597,7 @@ export default function CustomerDashboard() {
         <div className="text-center mb-8">
           <div className="relative w-32 h-32 mx-auto mb-4">
              {/* Profile Photo - Show loading spinner while fetching */}
-      {loading  && !profilePic  ? (
+      {loading  ? (
         <div className="w-full h-full rounded-full bg-gray-200 flex items-center justify-center">
           <div className="w-8 h-8 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
         </div>
@@ -596,7 +606,7 @@ export default function CustomerDashboard() {
             {profilePic ?(
               <img
               key={profilePic}
-                src={profilePic.startsWith('data:') ? profilePic : `${profilePic}${profilePic.includes('?') ? '&' : '?'}t=${Date.now()}`}
+               src={profilePic}
                 alt={profile.fullName || "Profile"}
                 className="w-full h-full rounded-full object-cover shadow-lg"
                 onError={(e) => {
@@ -681,7 +691,7 @@ export default function CustomerDashboard() {
 
       {/* Main Content */}
       <div className="flex-1 p-6 lg:p-8">
-        {loading && !initialFetchDone ? (
+        {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
@@ -831,7 +841,7 @@ export default function CustomerDashboard() {
                           {profilePic ? (
                           <img
                             key={profilePic}
-            src={profilePic.startsWith('data:') ? profilePic : `${profilePic}${profilePic.includes('?') ? '&' : '?'}t=${Date.now()}`}
+                            src={profilePic}
                             alt={profile.fullName || "Profile"}
                             className="w-full h-full object-cover"
                             onError={(e) => {

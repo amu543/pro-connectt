@@ -13,7 +13,7 @@ import {
   Save,
   Star,
   User,
-  X
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
@@ -29,7 +29,7 @@ export default function ProviderDashboard() {
   const [phone, setPhone] = useState("");
   const [bio, setBio] = useState("");
   const [skills, setSkills] = useState([]);
-  const [newSkill, setNewSkill] = useState("");
+   const [newSkill, setNewSkill] = useState({ name: "", price: "" });
   const [profilePic, setProfilePic] = useState(null);
   const [profilePhotoFile, setProfilePhotoFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -87,7 +87,10 @@ useEffect(() => {
         street: profileData.address?.street || "Not specified",
         latitude: profileData.currentLocation?.coordinates?.[1] || 0,
         longitude: profileData.currentLocation?.coordinates?.[0] || 0,
-        skills: profileData.skills?.map(skill => skill.name) || [],
+        skills: profileData.skills?.map(skill => ({
+          name: skill.name || skill,
+          price: skill.price || null
+        })) || [],
         profilePhoto: profileData.profilePhoto || null
       };
       
@@ -191,11 +194,15 @@ const handleSaveProfile = async () => {
         street: profileData.address?.street || profile.street,
         latitude: profileData.currentLocation?.coordinates?.[1] || profile.latitude,
         longitude: profileData.currentLocation?.coordinates?.[0] || profile.longitude,
-        skills: profileData.skills?.map(skill => skill.name) || skills,
+        skills: profileData.skills?.map(skill => ({
+          name: skill.name || skill,
+          price: skill.price || null
+        })) || skills,
         profilePhoto: profileData.profilePhoto || profilePic
       };
       
       setProfile(updatedProfile);
+      setSkills(updatedProfile.skills);
     }
   } catch (err) {
     console.error("Profile update failed:", err);
@@ -204,9 +211,17 @@ const handleSaveProfile = async () => {
 };
 
   const addSkill = () => {
-    if (newSkill.trim() && !skills.includes(newSkill.trim())) {
-      setSkills([...skills, newSkill.trim()]);
-      setNewSkill("");
+    if (newSkill.name.trim()) {
+      const skillExists = skills.some(s => s.name.toLowerCase() === newSkill.name.trim().toLowerCase());
+      if (!skillExists) {
+        setSkills([...skills, { 
+          name: newSkill.name.trim(), 
+          price: newSkill.price ? parseFloat(newSkill.price) : null 
+        }]);
+        setNewSkill({ name: "", price: "" });
+      } else {
+        alert("This skill already exists!");
+      }
     }
   };
 
@@ -596,51 +611,97 @@ function ProfileTab({
           </div>
 
           {/* Skills */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Professional Skills</label>
-            {isEditing ? (
-              <div>
-                <div className="flex gap-2 mb-3">
-                  <input
-                    type="text"
-                    value={newSkill}
-                    onChange={e => setNewSkill(e.target.value)}
-                    onKeyPress={e => e.key === 'Enter' && addSkill()}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900"
-                    placeholder="Add a new skill..."
-                  />
-                  <button onClick={addSkill} className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
-                    <Plus size={20} />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {skills.map((skill, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-800 rounded-full text-sm font-medium border border-gray-300">
-                      {skill}
-                      <button onClick={() => removeSkill(skill)} className="ml-1 text-gray-600 hover:text-gray-800">
-                        <X size={14} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 min-h-[60px]">
-                <div className="flex flex-wrap gap-2">
-                  {skills.length > 0 ? (
-                    skills.map((skill, i) => (
-                      <span key={i} className="px-3 py-1.5 bg-gray-100 text-gray-800 rounded-full text-sm font-medium border border-gray-300">
-                        {skill}
-                      </span>
-                    ))
-                  ) : (
-                    <p className="text-gray-500">No skills added yet</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
+          {/* Skills - FIXED with price input */}
+<div className="space-y-2">
+  <label className="block text-sm font-medium text-gray-700">Professional Skills & Pricing</label>
+  {isEditing ? (
+    <div>
+      <div className="flex gap-2 mb-3">
+        <input
+          type="text"
+          value={newSkill.name}
+          onChange={e => setNewSkill({ ...newSkill, name: e.target.value })}
+          onKeyPress={e => e.key === 'Enter' && addSkill()}
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900"
+          placeholder="Skill name (e.g., pipe repairing)"
+        />
+        <input
+          type="number"
+          value={newSkill.price}
+          onChange={e => setNewSkill({ ...newSkill, price: e.target.value })}
+          className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900"
+          placeholder="Price"
+        />
+        <button 
+          onClick={addSkill} 
+          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+        >
+          <Plus size={20} />
+        </button>
+      </div>
+      
+      {/* Skills Table */}
+      {skills.length > 0 && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full border border-gray-200 rounded-lg">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left px-4 py-2 text-sm font-semibold text-gray-700">Service</th>
+                <th className="text-left px-4 py-2 text-sm font-semibold text-gray-700">Price (NPR)</th>
+                <th className="text-right px-4 py-2 text-sm font-semibold text-gray-700">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {skills.map((skill, i) => (
+                <tr key={i} className="border-t border-gray-200">
+                  <td className="px-4 py-2 text-sm text-gray-800">{skill.name}</td>
+                  <td className="px-4 py-2 text-sm text-gray-800 font-medium">
+                    {skill.price ? `Rs. ${skill.price}` : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <button 
+                      onClick={() => removeSkill(skill.name)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <X size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
+      {skills.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="border-b border-gray-200">
+              <tr>
+                <th className="text-left py-2 text-sm font-medium text-gray-600">Service</th>
+                <th className="text-left py-2 text-sm font-medium text-gray-600">Price (NPR)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {skills.map((skill, i) => (
+                <tr key={i} className="border-b border-gray-100 last:border-0">
+                  <td className="py-2 text-sm text-gray-800">{skill.name}</td>
+                  <td className="py-2 text-sm text-gray-800 font-medium">
+                    {skill.price ? `Rs. ${skill.price}` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-gray-500">No skills added yet</p>
+      )}
+    </div>
+  )}
+</div>
           {/* Location */}
           <div className="border-t border-gray-200 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">

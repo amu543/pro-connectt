@@ -133,26 +133,49 @@ router.patch(
       }
 
       // Update skills/expertise
-      if (body.skillsExpertise) {
-        try{
-        const skillsRaw = body.skillsExpertise;
-        const skills = typeof skillsRaw === "string"
-          ? (skillsRaw.startsWith("[") ? JSON.parse(skillsRaw) : skillsRaw.split(",").map(s => s.trim()))
-          : skillsRaw;
-        if (!Array.isArray(skills) || skills.length === 0){
-          return res.status(400).json({
-             error: "Skills/Expertise must be non-empty array" });
-      }
-        sp.skillsExpertise= skills.map(skill =>({
-          name: skill.name || skill, // if it's an object with name or just a string
-          price: skill.price ?? null
-        }));
+        if (body.skillsExpertise) {
+        try {
+          let skills = body.skillsExpertise;
+          
+          // Parse if it's a string
+          if (typeof skills === "string") {
+            try {
+              skills = JSON.parse(skills);
+            } catch (e) {
+              // If not valid JSON, split by comma
+              skills = skills.split(",").map(s => s.trim());
+            }
+          }
+          
+          // Ensure it's an array
+          if (!Array.isArray(skills)) {
+            return res.status(400).json({ error: "Skills/Expertise must be an array" });
+          }
+          
+          // Process each skill - preserve both name and price
+          sp.skillsExpertise = skills.map(skill => {
+            if (typeof skill === 'string') {
+              // If it's just a string, create object with name only
+              return { name: skill, price: null };
+            } else if (typeof skill === 'object') {
+              // If it's an object, preserve both name and price
+              return {
+                name: skill.name || '',
+                price: skill.price !== undefined ? skill.price : null
+              };
+            }
+            return { name: '', price: null };
+          }).filter(skill => skill.name); // Remove empty entries
+          
+          console.log("Processed skills with prices:", sp.skillsExpertise);
+          
         } catch (error) {
-    return res.status(400).json({
-      error: "Invalid skills format"
-    });
-  }
-}
+          console.error("Skills processing error:", error);
+          return res.status(400).json({
+            error: "Invalid skills format"
+          });
+        }
+      }
 
       // Update files
      if (files.profilePhoto?.[0]) {
