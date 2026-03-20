@@ -5,7 +5,9 @@ const ServiceTaken = require("../models/servicetaken");
 const Notification = require("../models/notification");
 const ServiceProvider = require("../models/ServiceProvider");
 const customerAuth = require("../middleware/customerAuth"); 
-
+const Rating = require("../models/rating");
+const rating = require("../models/rating");
+const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 /* ============================
    GET PROVIDERS BY SERVICE
 ============================ */
@@ -66,11 +68,11 @@ router.get(
         service: serviceToFind,
         isVerified: true
       }).select(
-        "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio"
+        "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio isOnline ratings"
       );
        console.log(`✅ Found ${providers.length} providers for ${serviceToFind}`);
-
-      const transformedProviders = providers.map(p => {
+        const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+      const transformedProviders = await Promise.all(providers.map(async (p) => {
         let distanceInKm = null;
         if (p.currentLocation && p.currentLocation.coordinates) {
           const [lng, lat] = p.currentLocation.coordinates;
@@ -79,6 +81,20 @@ router.get(
             lat, lng
           );
         }
+         let profilePhotoUrl = null;
+        if (p.profilePhoto) {
+          if (p.profilePhoto.startsWith('http')) {
+            profilePhotoUrl = p.profilePhoto;
+          } else if (p.profilePhoto.startsWith('/uploads')) {
+            profilePhotoUrl = `${BASE_URL}${p.profilePhoto}`;
+          } else {
+            profilePhotoUrl = `${BASE_URL}/uploads/${p.profilePhoto}`;
+          }
+        }
+         const reviews = await Rating.find({ serviceProviderId: p._id })
+            .populate('customerId', 'fullName profilePhoto')
+            .sort({ createdAt: -1 })
+            .limit(2); // Get latest 2 reviews
         return{
         _id: p._id,
         id: p._id,
@@ -88,7 +104,7 @@ router.get(
           service: p.service,
           experience: p.yearsOfExperience || "N/A",
           yearsOfExperience: p.yearsOfExperience || "N/A",
-          profilePhoto: p.profilePhoto || null,
+          profilePhoto: p.profilePhoto ? `${BASE_URL}${p.profilePhoto.startsWith('/') ? '' : '/'}${p.profilePhoto}`: null,
           currentLocation: p.currentLocation,
           skills: p.skillsExpertise || [],
           topSkills: p.skillsExpertise || [],
@@ -96,9 +112,18 @@ router.get(
           bio: p.shortBio || "No bio available",
           isOnline: p.isOnline,
           isVerified: p.isVerified,
-          distanceInKm: distanceInKm ? parseFloat(distanceInKm.toFixed(1)) : null
+          distanceInKm: distanceInKm ? parseFloat(distanceInKm.toFixed(1)) : null,
+          rating: p.ratings?.avgRating || 0,
+          totalRatings: p.ratings?.totalRatings || 0,
+           reviews: reviews.map(r => ({
+              rating: r.rating,
+              text: r.review,
+              customerName: r.customerId?.fullName,
+              createdAt: r.createdAt
+            }))
         };
-      });
+      })
+      );
       res.json({
         count: transformedProviders.length,
         providers: transformedProviders
@@ -461,18 +486,38 @@ router.get("/completed-requests/:customerId", async (req, res) => {
       .sort({ completedAt: -1 }); // Most recent first
     
     console.log(`✅ Found ${requests.length} completed requests`);
-    
-    // Add completedAt to the response if not present
-    const requestsWithDates = requests.map(req => {
-      const reqObj = req.toObject();
-      if (!reqObj.completedAt) {
-        reqObj.completedAt = reqObj.updatedAt || reqObj.createdAt;
-      }
-      return reqObj;
+     requests.forEach((req, index) => {
+      console.log(`Provider ${index}: ${req.provider?.fullName} - Photo: ${req.provider?.profilePhoto}`);
     });
+    // Add completedAt to the response if not present
     
-    res.json(requestsWithDates);
+     const requestsWithReviews = await Promise.all(
+      requests.map(async (req) => {
+        const reqObj = req.toObject();
+        
+        // Find review for this provider from this customer
+        const review = await Rating.findOne({
+          serviceProviderId: req.provider._id,
+          customerId: customerId
+        });
+        
+        if (review) {
+          reqObj.review = {
+            rating: review.rating,
+            text: review.review,
+            createdAt: review.createdAt
+          };
+        }
+        
+        if (!reqObj.completedAt) {
+          reqObj.completedAt = reqObj.updatedAt || reqObj.createdAt;
+        }
+        
+        return reqObj;
+      })
+    );
     
+    res.json(requestsWithReviews);
   } catch (err) {
     console.error("❌ Error fetching completed requests:", err);
     res.status(500).json({ msg: "Server error" });

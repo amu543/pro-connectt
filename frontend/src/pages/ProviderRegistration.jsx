@@ -257,18 +257,18 @@ const ProviderRegistration = () => {
     
     // Files - Match backend field names
     if (form.profilePhoto) {
-      formData.append("Profile Photo", form.profilePhoto);
+      formData.append("profilePhoto", form.profilePhoto);
     }
     
     if (form.idFile) {
-      formData.append("Upload ID", form.idFile);
+      formData.append("idFile", form.idFile);
     }
     
     if (form.cvFile) {
-      formData.append("Upload CV", form.cvFile);
+      formData.append("cvFile", form.cvFile);
     }
     
-    formData.append("ID type", form.idType);
+    formData.append("idType", form.idType);
     
     // Portfolio files
     form.portfolio.forEach((file, index) => {

@@ -43,7 +43,7 @@ router.post("/add", customerAuth, async (req, res) => {
     }
 
     // 4️⃣ Save the rating
-    const newRating = new Rating({ serviceProviderId, customerId, rating, review });
+    const newRating = new Rating({ serviceProviderId, customerId, rating, review: review || ""  });
     await newRating.save();
 
     // 5️⃣ Update ServiceProvider avgRating & totalRatings
@@ -68,6 +68,9 @@ router.post("/add", customerAuth, async (req, res) => {
 router.get('/reviews/:serviceProviderId', async (req, res) => {
   try {
     const { serviceProviderId } = req.params;
+     if (!mongoose.Types.ObjectId.isValid(serviceProviderId)) {
+      return res.status(400).json({ message: "Invalid provider ID" });
+    }
     const reviews = await Rating.find({ serviceProviderId })
       .populate('customerId', 'fullName') // optional: get customer name
       .sort({ createdAt: -1 });

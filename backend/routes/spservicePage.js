@@ -64,7 +64,7 @@ router.get("/my-details", spAuth, async (req, res) => {
       fullName: sp.fullName,
       phone: sp.phone,
       email: sp.email,
-       photo: sp.profilePhoto ? `/${sp.profilePhoto}` : "",
+       photo: sp.profilePhoto ?  (sp.profilePhoto.startsWith('/') ? sp.profilePhoto : `/${sp.profilePhoto}`) : "",
       experience: sp.yearsOfExperience || "",
       shortBio: sp.shortBio || "",
       rating: sp.rating || 0,

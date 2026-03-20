@@ -1,8 +1,8 @@
 // Review.jsx — rating endpoints corrected to backend mount /customer/rating
-import { useState, useEffect } from "react";
-import { useLocation, useParams, useNavigate } from "react-router-dom";
-import { FaStar, FaSpinner } from "react-icons/fa";
 import axios from "axios";
+import { useEffect, useState } from "react";
+import { FaSpinner, FaStar } from "react-icons/fa";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 // API Base URL
 const API_BASE_URL = "http://localhost:5000/api";
@@ -24,29 +24,55 @@ api.interceptors.request.use((config) => {
 // Rating service functions
 const ratingService = {
   // Add a rating & review
-  addRating: async (serviceProviderId, customerId, rating, review) => {
+  addRating: async (serviceProviderId,  rating, review) => {
     try {
-      // backend route: POST /api/customer/rating/add (customerAuth used server-side)
-      const response = await api.post("/customer/rating/add", {
-        serviceProviderId,
-        rating,
-        review
-      });
+        
+      const requestData = {
+         serviceProviderId: serviceProviderId,  // This must match exactly
+        rating: rating,
+        review: review
+      };
+      
+      console.log("Sending rating data:", requestData);
+        console.log("Provider ID type:", typeof serviceProviderId);
+      console.log("Provider ID value:", serviceProviderId);
+      console.log("Rating type:", typeof rating);
+      console.log("Review length:", review.length);
+      
+      const response = await api.post("/customer/rating/add", requestData);
       return response.data;
     } catch (error) {
-      console.error("Error adding rating:", error);
-      throw error;
+       console.error("========== COMPLETE ERROR RESPONSE ==========");
+    console.error("Status:", error.response?.status);
+    console.error("Status Text:", error.response?.statusText);
+    console.error("Response Data:", error.response?.data);  // This is what we need!
+    console.error("Response Headers:", error.response?.headers);
+    console.error("Request Data Sent:", error.config?.data);
+    console.error("============================================");
+    throw error;
     }
   },
+
 
   // Get all reviews for a service provider
   getReviews: async (serviceProviderId) => {
     try {
+         console.log("Fetching reviews for provider:", serviceProviderId);
       // backend route: GET /api/customer/rating/reviews/:serviceProviderId
       const response = await api.get(`/customer/rating/reviews/${serviceProviderId}`);
-      return response.data;
+      console.log("getReviews response:", response.data);
+      
+      // Ensure we return an array
+      if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data && typeof response.data === 'object') {
+        // If it's an object with a reviews property
+        return response.data.reviews || [];
+      } else {
+        return [];
+      }
     } catch (error) {
-      console.error("Error fetching reviews:", error);
+      console.error("Error fetching reviews:", error.response?.data || error.message);
       return [];
     }
   },
@@ -70,6 +96,19 @@ export default function ReviewPage() {
   const navigate = useNavigate();
 
   const { provider, service, date, skills, providerName } = location.state || {};
+   useEffect(() => {
+    console.log("========== REVIEW PAGE DEBUG ==========");
+    console.log("URL Params - id:", id);
+    console.log("Location state:", location.state);
+    console.log("Provider ID from params:", id);
+    console.log("Is valid MongoDB ID?", /^[0-9a-fA-F]{24}$/.test(id));
+    console.log("Token present:", !!localStorage.getItem("token"));
+    
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    console.log("Current user from localStorage:", user);
+      console.log("User role:", user.role);  // Add this line
+    console.log("========================================");
+  }, [id, location.state]);
 
   /* ------------------ STATES ------------------ */
   const [rating, setRating] = useState(0);
@@ -100,6 +139,13 @@ export default function ReviewPage() {
       if (id) {
         const reviewsData = await ratingService.getReviews(id);
         setReviews(reviewsData);
+         if (Array.isArray(reviewsData)) {
+        console.log("Reviews array length:", reviewsData.length);
+        setReviews(reviewsData);
+      } else {
+        console.log("Reviews data is not an array:", reviewsData);
+        setReviews([]);
+      }
 
         // Fetch average rating
         const averageData = await ratingService.getAverageRating(id);
@@ -128,24 +174,22 @@ export default function ReviewPage() {
       return;
     }
 
-    if (!customer?._id) {
-      alert("Please login to submit a review.");
-      navigate("/login");
-      return;
-    }
-
     if (!id) {
       alert("Provider information is missing.");
       return;
     }
-
+      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+  if (!isValidObjectId) {
+    console.error("Invalid provider ID format:", id);
+    alert("Invalid provider ID format. Please contact support.");
+    return;
+  }
     try {
       setSubmitting(true);
 
       // Submit review to backend
       const result = await ratingService.addRating(
         id,
-        customer._id,
         rating,
         reviewText
       );
@@ -177,11 +221,14 @@ export default function ReviewPage() {
       alert("Thank you for your review!");
     } catch (error) {
       console.error("Error submitting review:", error);
-      if (error.response?.status === 400 && error.response?.data?.message?.includes("already rated")) {
-        alert("You have already rated this provider.");
-      } else {
-        alert("Failed to submit review. Please try again.");
-      }
+     console.error("Error response data:", error.response?.data);
+  
+  // Show the actual error message from backend
+  const errorMsg = error.response?.data?.message || 
+                  error.response?.data?.error || 
+                  "Failed to submit review. Please try again.";
+  
+  alert(`Error: ${errorMsg}`);  // This will show the real reason
     } finally {
       setSubmitting(false);
     }

@@ -16,7 +16,7 @@ import {
   User
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone, FaStar } from "react-icons/fa";
+import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone } from "react-icons/fa";
 import { useNavigate, useParams } from "react-router-dom";
 
 // Services images
@@ -251,6 +251,21 @@ export default function CustomerDashboard() {
     
     // Get completed requests separately
     const completedData = await customerService.getCompletedRequests(profile._id);
+     // ADD THIS DETAILED LOGGING
+    console.log("===== COMPLETED SERVICES DATA =====");
+    console.log("Raw completed data:", completedData);
+    completedData.forEach((service, index) => {
+      console.log(`Service ${index}:`, {
+        id: service._id,
+        service: service.service,
+        provider: service.provider,
+        providerId: service.provider?._id,
+        providerName: service.provider?.fullName,
+        providerPhoto: service.provider?.profilePhoto,
+        hasProviderPhoto: !!service.provider?.profilePhoto
+      });
+    });
+    console.log("===================================");
     setCompletedServices(completedData);
       
       setError("");
@@ -560,13 +575,34 @@ export default function CustomerDashboard() {
     if (!name) return "CU";
     return name.split(" ").map(n => n[0]).join("").toUpperCase();
   };
-
+ const getFullImageUrl = (photoPath) => {
+  if (!photoPath) return null;
+  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
+   let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  
+  // If it already starts with /uploads, just add base URL
+  if (cleanPath.startsWith('/uploads')) {
+    return `http://localhost:5000${cleanPath}`;
+  }
+  
+  // If it contains 'uploads' but doesn't start with it
+  if (cleanPath.includes('uploads')) {
+    // Make sure it starts with a slash
+    if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+    }
+    return `http://localhost:5000${cleanPath}`;
+  }
+  
+  // If it's just a filename, add /uploads/
+  return `http://localhost:5000/uploads/${cleanPath}`;
+};
   // Process provider data from API - UPDATED for your schema
   const processProvider = (provider, index) => {
  console.log("Processing provider:", provider); // Debug log to see what we're getting
   
   const fullName = provider.fullName || provider.name || "Unknown Provider";
-  const profilePhoto = provider.profilePhoto || null;
+  const profilePhoto = provider.profilePhoto ? getFullImageUrl(provider.profilePhoto) : null;
   const experience = provider.yearsOfExperience || provider.experience || "N/A";
   const skills = provider.skills || provider.topSkills || [];
   const bio = provider.shortBio || provider.bio || "No bio available";
@@ -579,6 +615,7 @@ export default function CustomerDashboard() {
     name: fullName,
     profilePhoto: profilePhoto,
     rating: provider.avgRating || provider.rating || 0,
+    totalRatings: provider.totalRatings || 0,
     totalServices: provider.servicesDone || provider.totalServices || 0,
     experience: experience,
     distance: distanceDisplay, 
@@ -587,9 +624,23 @@ export default function CustomerDashboard() {
     phone: provider.phone || "",
     skills: skills,
     online: provider.isOnline || false,
-    service: selectedCategory
+    service: selectedCategory,
+     reviews: provider.reviews || [] 
   };
 };
+const renderStars = (rating) => {
+    return (
+      <div className="flex items-center gap-0.5">
+        {[...Array(5)].map((_, i) => (
+          <Star
+            key={i}
+            size={14}
+            className={i < rating ? "text-yellow-500 fill-current" : "text-gray-300"}
+          />
+        ))}
+      </div>
+    );
+  };
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 text-gray-800">
       {/* Sidebar */}
@@ -1105,7 +1156,8 @@ export default function CustomerDashboard() {
                     </div>
                   ) : (
                     completedServices.map((service) => (
-                      <ServiceReviewCard key={service._id} service={service} />
+                      <ServiceReviewCard key={service._id} service={service}  getFullImageUrl={getFullImageUrl}  // Pass the function
+            getInitials={getInitials}   />
                     ))
                   )}
                 </div>
@@ -1212,9 +1264,28 @@ export default function CustomerDashboard() {
                                       <div className="flex items-start gap-6">
                                         {/* Avatar with Online Status */}
                                         <div className="relative">
-                                          <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-linear-to-br from-gray-900 to-gray-700 flex items-center justify-center text-white text-2xl font-bold shadow-xl relative">
+                                           {processedProvider.profilePhoto ? (
+                                          <img
+                                                src={processedProvider.profilePhoto}
+                                                alt={processedProvider.name}
+                                                className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover shadow-xl"
+                                                onError={(e) => {
+                                                  console.log("Failed to load provider image:", processedProvider.profilePhoto);
+                                                  e.target.onerror = null;
+                                                  e.target.style.display = 'none';
+                                                  // Show fallback avatar
+                                                  const parent = e.target.parentElement;
+                                                  const fallbackDiv = document.createElement('div');
+                                                  fallbackDiv.className = "w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center text-white text-2xl font-bold shadow-xl";
+                                                  fallbackDiv.textContent = getInitials(processedProvider.name);
+                                                  parent.appendChild(fallbackDiv);
+                                                }}
+                                              />
+                                          ) : (
+                                            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center text-white text-2xl font-bold shadow-xl">
                                             {getInitials(processedProvider.name)}
                                           </div>
+                                          )}
                                           {/* Online Status Badge */}
                                           <div className={`absolute -bottom-2 left-1/2 transform -translate-x-1/2 flex items-center gap-1 px-3 py-1 rounded-full ${processedProvider.online ? 'bg-green-100' : 'bg-gray-100'} border ${processedProvider.online ? 'border-green-200' : 'border-gray-200'}`}>
                                             <div className={`w-2 h-2 rounded-full ${processedProvider.online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
@@ -1235,14 +1306,13 @@ export default function CustomerDashboard() {
                                               </div>
                                             </div>
                                           </div>
-
-                                          {/* Experience and Services */}
+                                          {/* NEW: Rating stars display */}
                                           <div className="flex flex-wrap items-center gap-4 mb-4">
                                             <div className="flex items-center gap-2 bg-yellow-50 px-4 py-2 rounded-xl">
-                                              <FaStar className="text-yellow-500 text-sm" />
+                                              {renderStars(processedProvider.rating)}
                                               <div>
                                                 <div className="font-bold text-gray-900">{processedProvider.rating}</div>
-                                                <div className="text-xs text-gray-500">Rating</div>
+                                                <div className="text-xs text-gray-500">Rating ({processedProvider.totalRatings} reviews)</div>
                                               </div>
                                             </div>
                                             <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-xl">
@@ -1259,6 +1329,7 @@ export default function CustomerDashboard() {
                                               </div>
                                             </div>
                                           </div>
+                                          
                                           {/* Bio */}
                                           <p className="text-gray-700 mb-5">{processedProvider.bio}</p>
 
@@ -1351,7 +1422,7 @@ export default function CustomerDashboard() {
                                                     Service
                                                   </th>
                                                   <th className="text-right px-4 py-3 text-sm font-semibold text-gray-700 border-b">
-                                                    Price
+                                                    Price(NPR)
                                                   </th>
                                                 </tr>
                                               </thead>
@@ -1374,12 +1445,49 @@ export default function CustomerDashboard() {
                                             </table>
                                           </div>
                                         </div>
-                                      </div>
+                                        </div>
+                                          {/* NEW: Customer Reviews Section */}
+                                          {processedProvider.reviews && processedProvider.reviews.length > 0 && (
+                                            <div className="mt-8">
+                                              <h3 className="text-xl font-bold text-gray-900 mb-4">
+                                                Customer Reviews ({processedProvider.totalRatings})
+                                              </h3>
+                                              <div className="space-y-4">
+                                                {processedProvider.reviews.map((review, idx) => (
+                                                  <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                      <div className="flex items-center gap-1">
+                                                        {[...Array(5)].map((_, i) => (
+                                                          <Star key={i} size={14} className={i < review.rating ? "text-yellow-500 fill-current" : "text-gray-300"} />
+                                                        ))}
+                                                      </div>
+                                                      <span className="text-sm font-medium text-gray-700">{review.customerName || "Anonymous"}</span>
+                                                      <span className="text-xs text-gray-500">{new Date(review.createdAt).toLocaleDateString()}</span>
+                                                    </div>
+                                                    {review.text && (
+                                                      <p className="text-gray-700 text-sm italic">"{review.text}"</p>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                              {processedProvider.totalRatings > 2 && (
+                                                <button className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium">View all {processedProvider.totalRatings} reviews →</button>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {processedProvider.totalRatings === 0 && (
+                                            <div className="mt-8 p-4 bg-gray-50 rounded-lg text-center">
+                                              <p className="text-gray-500">No reviews yet. Be the first to review!</p>
+                                            </div>
+                                          )}
+
+                      
                                     </motion.div>
                                   )}
-                                </div>
-                              </motion.div>
-                            );
+                                      </div>
+                                    </motion.div>
+                                  )
                           })}
                         </div>
                       )}
@@ -1415,10 +1523,44 @@ function SidebarItem({ icon, label, active, onClick, badge }) {
   );
 }
 
-function ServiceReviewCard({ service }) {
+function ServiceReviewCard({ service, getFullImageUrl, getInitials }) {
   const navigate = useNavigate();
   const provider = service.provider || {};
-
+  const review = service.review; 
+   console.log("🎯 ServiceReviewCard received:", {
+    serviceId: service._id,
+    provider: provider,
+    service: service.service,
+    hasProvider: !!service.provider,
+    hasReview:!!review
+  });
+   const getImageUrl = (photoPath) => {
+    console.log("getImageUrl called with:", photoPath);
+    if (!photoPath) return null;
+     if (photoPath.startsWith('http') || photoPath.startsWith('data:')) {
+    return photoPath;
+  }
+  
+  // Clean up the path - remove any double slashes
+  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  
+  // If the path already starts with /uploads, just add base URL
+  if (cleanPath.startsWith('/uploads')) {
+    return `http://localhost:5000${cleanPath}`;
+  }
+  
+  // If the path contains 'uploads' but doesn't start with it
+  if (cleanPath.includes('uploads')) {
+    // Make sure it starts with a slash
+    if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+    }
+    return `http://localhost:5000${cleanPath}`;
+  }
+  
+  // If it's just a filename, add /uploads/
+  return `http://localhost:5000/uploads/${cleanPath}`;
+};
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -1430,9 +1572,27 @@ function ServiceReviewCard({ service }) {
           <div className="flex flex-col sm:flex-row sm:items-start gap-4">
             {/* Provider Info with Profile Picture */}
             <div className="shrink-0">
-              <div className="w-16 h-16 rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
+              {provider.profilePhoto ? (
+                <img
+                  src={getImageUrl(provider.profilePhoto)}
+                  alt={provider.fullName || provider.name}
+                  className="w-16 h-16 rounded-full object-cover"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.style.display = 'none';
+                    const parent = e.target.parentElement;
+                    const fallbackDiv = document.createElement('div');
+                    fallbackDiv.className = "w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold";
+                    fallbackDiv.textContent = getInitials(provider.fullName || provider.name);
+                    parent.appendChild(fallbackDiv);
+                  }}
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
+
                 {getInitials(provider.fullName || provider.name)}
               </div>
+              )}
             </div>
 
             <div className="flex-1">
@@ -1441,11 +1601,14 @@ function ServiceReviewCard({ service }) {
                 <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
                   {service.service || "Service"}
                 </span>
-                <div className="flex items-center gap-1">
-                  <Star size={12} className="text-yellow-500 fill-current" />
-                  <span className="font-semibold text-sm">0</span>
-                  <span className="text-gray-500 text-xs">(0 services)</span>
-                </div>
+                {review && (
+                  <div className="flex items-center gap-1">
+                    <Star size={12} className="text-yellow-500 fill-current" />
+                    <span className="font-semibold text-sm">{review.rating}</span>
+                    <span className="text-gray-500 text-xs">({review.text ? 1 : 0} services)</span>
+                  </div>
+                )}
+
               </div>
               
               <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
@@ -1458,17 +1621,40 @@ function ServiceReviewCard({ service }) {
                   Completed on {new Date(service.completedAt || service.updatedAt || service.createdAt).toLocaleDateString()}
                 </span>
               </div>
-              
+                            {/* Show review text if exists */}
+              {review && review.text && (
+                <div className="mb-3 p-3 bg-gray-50 rounded-lg">
+                  <p className="text-gray-700 text-sm italic">"{review.text}"</p>
+                </div>
+              )}
+
               {/* Skills */}
               <div className="flex flex-wrap gap-1.5">
-                  {(provider.skillsExpertise || provider.skills || []).slice(0, 5).map((skill, i) => (
-                  <span
-                    key={i}
-                    className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs border border-gray-200"
-                  >
-                    {typeof skill === 'object' ? skill.name || JSON.stringify(skill) : skill}
-                  </span>
-                ))}
+                  {(provider.skillsExpertise || provider.skills || []).slice(0, 5).map((skill, i) => {
+             // Extract the skill name safely - whether it's a string or an object
+                  let skillName = '';
+                  if (typeof skill === 'string') {
+                    skillName = skill;
+                  } else if (typeof skill === 'object' && skill !== null) {
+                    // If it's an object, try to get name property or stringify safely
+                    skillName = skill.name || JSON.stringify(skill);
+                    // Truncate if too long
+                    if (skillName.length > 30) {
+                      skillName = skillName.substring(0, 30) + '...';
+                    }
+                  } else {
+                    skillName = String(skill);
+                  }
+                  
+                  return (
+                    <span
+                      key={i}
+                      className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs border border-gray-200"
+                    >
+                      {skillName}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1476,17 +1662,26 @@ function ServiceReviewCard({ service }) {
 
         {/* Action Button */}
         <button
-          onClick={() =>
-            navigate(`/review/${service._id}`, {
+          onClick={() =>{  
+            console.log('Provider ID (going to URL):', provider._id);
+              console.log('Request ID (in state):', service._id); 
+            navigate(`/review/${provider._id}`, {
               state: {
                 providerId: provider._id,
                 provider: provider.fullName || provider.name,
                 service: service.service,
+                 requestId: service._id || service.requestId || null,
                 date: service.completedAt || service.updatedAt || service.createdAt,
-                skills: provider.skillsExpertise || provider.skills || []
+                skills: (provider.skillsExpertise || provider.skills || []).map (skill =>{
+               if (typeof skill === 'string') return skill;
+                  if (typeof skill === 'object' && skill !== null) {
+                    return skill.name || JSON.stringify(skill);
+                  }
+                  return String(skill);
+                })
               },
             })
-          }
+          }}
           className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors duration-200 font-medium shadow-sm hover:shadow self-start"
         >
           Write Review
@@ -1495,7 +1690,6 @@ function ServiceReviewCard({ service }) {
     </motion.div>
   );
 }
-
 function InfoField({ label, value, isEditing, onChange, type = "text", disabled = false }) {
   return (
     <div className="space-y-2">

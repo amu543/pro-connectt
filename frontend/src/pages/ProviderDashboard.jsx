@@ -43,6 +43,36 @@ export default function ProviderDashboard() {
   const [completedJobs, setCompletedJobs] = useState([]);
   const token = localStorage.getItem("token"); // Auth token
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
+  const getImageUrl = (photoPath) => {
+  if (!photoPath) return null;
+  
+  // If it's already a full URL
+  if (photoPath.startsWith('http')|| photoPath.startsWith('data:')) return photoPath;
+  
+  // Clean up the path (remove any double slashes)
+   let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  
+  // If it's just a filename without path, add /uploads/
+  if (!cleanPath.includes('/')) {
+    cleanPath = `/uploads/${cleanPath}`;
+  }
+  
+  // If it doesn't start with /uploads but should
+  if (!cleanPath.startsWith('/uploads') && cleanPath.includes('uploads')) {
+    const uploadsIndex = cleanPath.indexOf('uploads');
+    cleanPath = cleanPath.substring(uploadsIndex - 1);
+  }
+  
+  // Ensure it starts with /
+  if (!cleanPath.startsWith('/')) {
+    cleanPath = '/' + cleanPath;
+  }
+  
+  const fullUrl = `${API_BASE_URL.replace('/api', '')}${cleanPath}`;
+  console.log("Constructed URL:", fullUrl);
+  
+  return fullUrl;
+};
 
   // Configure axios with auth header
   const api = axios.create({
@@ -52,7 +82,19 @@ export default function ProviderDashboard() {
       'Content-Type': 'application/json'
     }
   });
-
+const renderStars = (rating) => {
+    return (
+      <div className="flex items-center gap-0.5">
+        {[...Array(5)].map((_, i) => (
+          <Star 
+            key={i} 
+            size={14} 
+            className={i < Math.floor(rating || 0) ? "text-yellow-500 fill-current" : "text-gray-300"} 
+          />
+        ))}
+      </div>
+    );
+  };
 // ----------------------
 // FETCH PROFILE & REQUESTS
 // ----------------------
@@ -60,6 +102,7 @@ useEffect(() => {
   if (!token) {
     navigate("/");
     return;
+    
   }
 
   const fetchData = async () => {
@@ -69,14 +112,15 @@ useEffect(() => {
       const profileRes = await api.get("/sp-service-page/my-details");
       const profileData = profileRes.data;
       console.log("Profile data from /my-details:", profileData); 
-      
+      console.log("Profile photo path from server:", profileData.Photo);
+      console.log("ProfilePhoto field:", profileData.profilePhoto);
       // Map //
       const mappedProfile = {
         name: profileData.fullName || "",
         email: profileData.email || "", 
         phone: profileData.phone || "", 
         service: profileData.service || "",
-        experience: profileData.experience || "0", 
+        experience: profileData.yearsOfExperience || profileData.experience || "0", 
         rating: profileData.rating || 0, 
         totalRatings: profileData.totalRatings || 0,
         bio: profileData.shortBio || "",
@@ -84,16 +128,16 @@ useEffect(() => {
         district: profileData.address?.district || "",
         municipality: profileData.address?.municipality || "",
         ward: profileData.address?.ward || "",
-        street: profileData.address?.street || "Not specified",
         latitude: profileData.currentLocation?.coordinates?.[1] || 0,
         longitude: profileData.currentLocation?.coordinates?.[0] || 0,
         skills: profileData.skills?.map(skill => ({
           name: skill.name || skill,
           price: skill.price || null
         })) || [],
-        profilePhoto: profileData.profilePhoto || null
+        profilePhoto: profileData.photo || null
       };
-      
+      console.log("Mapped profile photo:", mappedProfile.profilePhoto);
+      console.log("Initial profile rating from DB:", mappedProfile.rating, "Total reviews:", mappedProfile.totalRatings);
       setProfile(mappedProfile);
       setPhone(mappedProfile.phone);
       setBio(mappedProfile.bio);
@@ -145,15 +189,23 @@ useEffect(() => {
 
   fetchData();
 }, [token, navigate]);
-
+useEffect(() => {
+  if (profile.profilePhoto) {
+    console.log("Syncing profilePic with profile.profilePhoto:", profile.profilePhoto);
+    setProfilePic(profile.profilePhoto);
+  }
+}, [profile.profilePhoto]);
 // ----------------------
 // PROFILE HANDLERS - UPDATED FOR /my-details
 // ----------------------
 const handleSaveProfile = async () => {
   try {
+     setLoading(true);
     const formData = new FormData();
     formData.append("phone", phone);
-    formData.append("skillsExpertise", JSON.stringify(skills));
+    formData.append("skillsExpertise", JSON.stringify(skills.map(skill =>
+       typeof skill === 'string' ? { name: skill, price: null } : skill
+    )));
     formData.append("shortBio", bio);
     if (profilePhotoFile) {
       formData.append("profilePhoto", profilePhotoFile);
@@ -174,10 +226,13 @@ const handleSaveProfile = async () => {
     if (response.data.message) {
       alert("Profile updated successfully!");
       setIsEditing(false);
+      //clear the file state
+        setProfilePhotoFile(null);
       
       // Refresh profile data from /my-details
       const profileRes = await api.get("/sp-service-page/my-details");
       const profileData = profileRes.data;
+       console.log("Updated profile data:", profileData);
       
       const updatedProfile = {
         name: profileData.fullName || profile.name,
@@ -191,22 +246,27 @@ const handleSaveProfile = async () => {
         district: profileData.address?.district || profile.district,
         municipality: profileData.address?.municipality || profile.municipality,
         ward: profileData.address?.ward || profile.ward,
-        street: profileData.address?.street || profile.street,
         latitude: profileData.currentLocation?.coordinates?.[1] || profile.latitude,
         longitude: profileData.currentLocation?.coordinates?.[0] || profile.longitude,
         skills: profileData.skills?.map(skill => ({
           name: skill.name || skill,
           price: skill.price || null
         })) || skills,
-        profilePhoto: profileData.profilePhoto || profilePic
+        profilePhoto: profileData.profilePhoto ||profileData.profilePhotoUrl || profilePic
       };
       
       setProfile(updatedProfile);
+      
       setSkills(updatedProfile.skills);
+       if (profileData.profilePhoto || profileData.profilePhotoUrl) {
+        setProfilePic(profileData.profilePhoto || profileData.profilePhotoUrl);
+      }
     }
   } catch (err) {
     console.error("Profile update failed:", err);
     alert("Failed to update profile: " + (err.response?.data?.error || err.message));
+  }finally {
+    setLoading(false);
   }
 };
 
@@ -225,17 +285,25 @@ const handleSaveProfile = async () => {
     }
   };
 
-  const removeSkill = (skillToRemove) => {
-    setSkills(skills.filter(skill => skill !== skillToRemove));
-  };
+const removeSkill = (skillToRemove) => {
+  // If skillToRemove is an object with name property
+  if (typeof skillToRemove === 'object' && skillToRemove.name) {
+    setSkills(skills.filter(skill => skill.name !== skillToRemove.name));
+  } else {
+    // If skillToRemove is a string
+    setSkills(skills.filter(skill => 
+      typeof skill === 'string' ? skill !== skillToRemove : skill.name !== skillToRemove
+    ));
+  }
+};
 
   const handleProfilePicChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setProfilePicFile(file);
+      setProfilePhotoFile(file);
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setProfilePic(e.target.result);
+      reader.onloadend = (e) => {
+        setProfilePic(reader.result);
       };
       reader.readAsDataURL(file);
     }
@@ -278,6 +346,28 @@ const handleSaveProfile = async () => {
       alert("Failed to deny request: " + (err.response?.data?.error || err.message));
     }
   };
+useEffect(() => {
+const fetchProviderRatings = async () => {
+   if (profile._id) {
+  try {
+    const response = await api.get(`/customer/rating/average/${profile._id}`);
+    console.log("Fetched ratings:", response.data);
+    if (response.data) {
+      setProfile(prev => ({
+        ...prev,
+        rating: response.data.avgRating,
+        totalRatings: response.data.totalRatings
+      }));
+      console.log("✅ Updated rating:", response.data.avgRating, "Total reviews:", response.data.totalRatings);
+    }
+  } catch (error) {
+    console.error("Error fetching ratings:", error);
+     console.error("Error details:", error.response?.data);
+  }
+};
+    fetchProviderRatings();
+  }
+}, [profile._id]);
 
   const handleCompleteJob = async (requestId) => {
     try {
@@ -331,10 +421,11 @@ const handleSaveProfile = async () => {
           <div className="relative w-32 h-32 mx-auto mb-4">
             {profile.profilePhoto ? (
               <img
-                src={`${API_BASE_URL.replace('/api', '')}${profile.profilePhoto}`}
+                src={getImageUrl(profile.profilePhoto)}
                 alt="Profile"
                 className="w-full h-full rounded-full object-cover shadow-lg border-4 border-white"
                 onError={(e) => {
+                   console.log("Image failed to load:", profile.profilePhoto);
                   e.target.onerror = null;
                   e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Provider')}&background=374151&color=fff&size=128`;
                 }}
@@ -533,7 +624,79 @@ function ProfileTab({
   handleProfilePicChange
 }) {
   const API_BASE_URL = "http://localhost:5000/api";
-
+   console.log("===== PROFILE TAB RENDER =====");
+   const getProfileImageSrc = () => {
+    if (!profilePic) return null;
+    
+    console.log("getProfileImageSrc received:", profilePic);
+    
+    if (profilePic.startsWith('http') || profilePic.startsWith('data:')) {
+      return profilePic;
+    }
+    
+    // Clean up the path - remove any double slashes at the beginning
+    let cleanPath = profilePic.replace(/\\/g, '/').replace(/\/+/g, '/');
+    
+    // If it starts with //, replace with /
+    if (cleanPath.startsWith('//')) {
+      cleanPath = '/' + cleanPath.substring(2);
+    }
+    
+    // If it's just a filename without path, add /uploads/
+    if (!cleanPath.includes('/')) {
+      cleanPath = `/uploads/${cleanPath}`;
+    }
+    
+    // If it doesn't start with /uploads but should
+    if (!cleanPath.startsWith('/uploads') && cleanPath.includes('uploads')) {
+      const uploadsIndex = cleanPath.indexOf('uploads');
+      cleanPath = cleanPath.substring(uploadsIndex - 1);
+    }
+    
+    // Ensure it starts with a single /
+    if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+    }
+    if (!cleanPath.startsWith('/uploads')) {
+      cleanPath = '/uploads' + cleanPath;
+    }
+    const fullUrl = `${API_BASE_URL.replace('/api', '')}${cleanPath}`;
+    console.log("getProfileImageSrc constructed URL:", fullUrl);
+    
+    return fullUrl;
+  };
+  console.log("profilePic in ProfileTab:", profilePic);
+  console.log("profile.profilePhoto in ProfileTab:", profile.profilePhoto);
+  console.log("profile.name:", profile.name);
+  console.log("==============================");
+  const formatAddress = () => {
+  const parts = [];
+  
+  // Add district if it exists
+  if (profile.district && profile.district !== "") {
+    parts.push(profile.district);
+  }
+  console.log("ProfileTab - profilePic:", profilePic);
+console.log("ProfileTab - profile.name:", profile.name);
+  
+  // Add municipality with ward
+  if (profile.municipality && profile.municipality !== "") {
+    if (profile.ward && profile.ward !== "") {
+      parts.push(`${profile.municipality}-${profile.ward}`);
+    } else {
+      parts.push(profile.municipality);
+    }
+  } else if (profile.ward && profile.ward !== "") {
+    parts.push(`Ward ${profile.ward}`);
+  }
+  
+  // Add province if it exists
+  if (profile.province && profile.province !== "") {
+    parts.push(profile.province);
+  }
+  
+  return parts.length > 0 ? parts.join(', ') : 'Address not specified';
+};
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -654,16 +817,18 @@ function ProfileTab({
             <tbody>
               {skills.map((skill, i) => (
                 <tr key={i} className="border-t border-gray-200">
-                  <td className="px-4 py-2 text-sm text-gray-800">{skill.name}</td>
-                  <td className="px-4 py-2 text-sm text-gray-800 font-medium">
-                    {skill.price ? `Rs. ${skill.price}` : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <button 
-                      onClick={() => removeSkill(skill.name)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <X size={16} />
+                  <td className="px-4 py-2 text-sm text-gray-800">
+      {typeof skill === 'string' ? skill : skill.name}
+    </td>
+    <td className="px-4 py-2 text-sm text-gray-800 font-medium">
+      {typeof skill === 'object' && skill.price ? `Rs. ${skill.price}` : '—'}
+    </td>
+    <td className="px-4 py-2 text-right">
+      <button 
+        onClick={() => removeSkill(skill)}
+        className="text-red-600 hover:text-red-800"
+      >
+        <X size={16} />
                     </button>
                   </td>
                 </tr>
@@ -709,9 +874,8 @@ function ProfileTab({
               Service Location
             </h3>
             <p className="text-gray-800 font-medium">
-              {profile.street}, {profile.district}, {profile.municipality}-{profile.ward}
+              {formatAddress()}
             </p>
-            <p className="text-gray-800">{profile.province}</p>
             <p className="text-gray-800">
               Coordinates: {profile.latitude ? profile.latitude.toFixed(4) : "N/A"}, {profile.longitude ? profile.longitude.toFixed(4) : "N/A"}
             </p>
@@ -719,60 +883,76 @@ function ProfileTab({
         </div>
 
         {/* Right - Profile Picture */}
-        <div className="flex flex-col items-center">
-          <div className="relative w-48 h-48 rounded-full bg-gray-200 overflow-hidden shadow-lg border-8 border-white">
-            {isEditing ? (
-              <label className="cursor-pointer w-full h-full flex items-center justify-center">
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleProfilePicChange}
-                />
-                {profilePic ? (
-                  <img
-                    src={profilePic.startsWith('http') ? profilePic : `${API_BASE_URL.replace('/api', '')}${profilePic}`}
-                    alt="Profile"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.parentElement.innerHTML = `
-                        <div class="text-center p-4">
-                          <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-600 flex items-center justify-center">
-                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                            </svg>
-                          </div>
-                          <p class="text-sm font-medium text-gray-700">Click to change photo</p>
-                          <p class="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB</p>
-                        </div>
-                      `;
-                    }}
-                  />
-                ) : (
-                  <div className="text-center p-4">
-                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-600 flex items-center justify-center">
-                      <Edit2 size={24} className="text-white" />
-                    </div>
-                    <p className="text-sm font-medium text-gray-700">Upload Professional Photo</p>
-                    <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB</p>
-                  </div>
-                )}
-              </label>
-            ) : (
-              <img
-                src={profilePic ? (profilePic.startsWith('http') ? profilePic : `${API_BASE_URL.replace('/api', '')}${profilePic}`) : `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Provider')}&background=374151&color=fff&size=192`}
-                alt="Profile"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Provider')}&background=374151&color=fff&size=192`;
-                }}
-              />
-            )}
+       <div className="flex flex-col items-center">
+  <div className="relative w-48 h-48 rounded-full bg-gray-200 overflow-hidden shadow-lg border-8 border-white">
+    {isEditing ? (
+      <label className="cursor-pointer w-full h-full flex items-center justify-center">
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleProfilePicChange}
+        />
+        {profilePic ? (
+          <img
+            src={getProfileImageSrc()}
+            alt="Profile"
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              console.log("Failed to load profile image:", profilePic);
+              e.target.style.display = 'none';
+              // Show fallback
+              const parent = e.target.parentElement;
+              const fallbackDiv = document.createElement('div');
+              fallbackDiv.className = "text-center p-4 w-full h-full flex flex-col items-center justify-center";
+              fallbackDiv.innerHTML = `
+                <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-600 flex items-center justify-center">
+                  <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                </div>
+                <p class="text-sm font-medium text-gray-700">Click to change photo</p>
+                <p class="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB</p>
+              `;
+              parent.appendChild(fallbackDiv);
+            }}
+          />
+        ) : (
+          <div className="text-center p-4 w-full h-full flex flex-col items-center justify-center">
+            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-600 flex items-center justify-center">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-gray-700">Click to change photo</p>
+            <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB</p>
           </div>
+        )}
+      </label>
+    ) : (
+      profilePic ? (
+        <img
+           src={getProfileImageSrc()} 
+          alt="Profile"
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            console.log("Failed to load profile image in view mode");
+            e.target.onerror = null;
+            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Provider')}&background=374151&color=fff&size=192`;
+          }}
+        />
+      ) : (
+        <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">
+          <span className="text-white text-5xl font-bold">
+            {profile.name ? profile.name.charAt(0).toUpperCase() : 'P'}
+          </span>
         </div>
-      </div>
+      )
+    )}
+  </div>
+</div>
+</div>
     </motion.div>
   );
 }
