@@ -695,7 +695,7 @@ router.post(
       const district = body["District"];
       const municipality = body["Municipality"];
       const wardNo = body["Ward No"];
-      const idType = body["ID type"] || body["ID Type"];
+      const idType = body["ID type"] || body["ID Type"] || body.idType;
 
      const profilePhoto = files.profilePhoto?.[0] || files["Profile Photo"]?.[0];
       const idDocument = files["Upload ID"]?.[0];
