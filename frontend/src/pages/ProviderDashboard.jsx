@@ -1,5 +1,7 @@
 import axios from "axios";
 import { motion } from "framer-motion";
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   Award,
   Briefcase,
@@ -17,7 +19,18 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
+import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
+
+// Fix for Leaflet marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+
 
 // API Configuration
 const API_BASE_URL = "http://localhost:5000/api";
@@ -34,6 +47,9 @@ export default function ProviderDashboard() {
   const [profilePhotoFile, setProfilePhotoFile] = useState(null);
   const [loading, setLoading] = useState(false);
  const [reviews, setReviews] = useState([]);
+ const [showMapModal, setShowMapModal] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   // ----------------------
   // API DATA STATES
   // ----------------------
@@ -42,6 +58,72 @@ export default function ProviderDashboard() {
   const [acceptedRequests, setAcceptedRequests] = useState([]);
   const [completedJobs, setCompletedJobs] = useState([]);
   const token = localStorage.getItem("token"); // Auth token
+   
+
+  // Map Component for Modal
+const MapModal = () => {
+  console.log("MapModal rendering with:", { selectedLocation, selectedCustomer });
+ 
+  if (!selectedLocation) {
+    console.log("No location selected, returning null");
+    return null;
+  }
+ 
+  const position = [selectedLocation.latitude, selectedLocation.longitude];
+  console.log("Map position:", position);
+ 
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={() => setShowMapModal(false)}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-96 overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+          <h3 className="text-xl font-bold text-gray-900">
+            {selectedCustomer?.name || "Customer"} Location
+          </h3>
+          <button
+            onClick={() => setShowMapModal(false)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X size={24} />
+          </button>
+        </div>
+        <div className="relative w-full h-[calc(100%-4rem)]">
+          {position && position[0] && position[1] ? (
+            <MapContainer
+              key={`${position[0]}-${position[1]}`}
+              center={position}
+              zoom={15}
+              style={{ height: '100%', width: '100%' }}
+              zoomControl={true}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <Marker position={position}>
+                <Popup>
+                  <div className="p-2">
+                    <strong className="text-gray-900">{selectedCustomer?.name || "Customer"}</strong><br />
+                    📍 Service Location<br />
+                    <small>Lat: {selectedLocation.latitude.toFixed(6)}<br />
+                    Lng: {selectedLocation.longitude.toFixed(6)}</small>
+                  </div>
+                </Popup>
+              </Marker>
+            </MapContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-gray-500">Invalid coordinates</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
   // First, check the provider details to get the ID
 fetch('http://localhost:5000/api/sp-service-page/my-details', {
   headers: { 'Authorization': `Bearer ${token}` }
@@ -593,14 +675,68 @@ const fetchProviderRatings = async () => {
     window.location.href = `tel:${phoneNumber}`;
   };
 
-  const handleOpenMap = (latitude, longitude) => {
-    if (latitude && longitude) {
-      const url = `https://www.google.com/maps?q=${latitude},${longitude}`;
-      window.open(url, "_blank");
-    } else {
-      alert("Location coordinates not available");
+  const handleOpenMap = async (latitude, longitude, customerName, requestId) => {
+  console.log("Opening map for:", { latitude, longitude, customerName, requestId });
+ 
+  if (latitude && longitude && latitude !== 0 && longitude !== 0) {
+    // If coordinates are already available, show modal immediately
+    setSelectedLocation({ latitude, longitude });
+    setSelectedCustomer({ name: customerName });
+    setShowMapModal(true);
+    console.log("Showing map with existing coordinates");
+  } else if (requestId) {
+    // If no coordinates, fetch from backend
+    try {
+      console.log("Fetching location for request:", requestId);
+      const response = await api.get(`/customer/request/accepted/${requestId}/customer-location`);
+      console.log("Backend response:", response.data);
+     
+      // Check different response formats
+      let locationData = null;
+     
+      if (response.data.location) {
+        // Format: { location: { latitude, longitude } }
+        locationData = response.data.location;
+      } else if (response.data.lat && response.data.lng) {
+        // Format: { lat, lng } - from your backend logs
+        locationData = {
+          latitude: response.data.lat,
+          longitude: response.data.lng
+        };
+      } else if (response.data.latitude && response.data.longitude) {
+        // Format: { latitude, longitude }
+        locationData = {
+          latitude: response.data.latitude,
+          longitude: response.data.longitude
+        };
+      }
+     
+      if (locationData && locationData.latitude && locationData.longitude) {
+        console.log("Location found:", locationData);
+        setSelectedLocation({
+          latitude: locationData.latitude,
+          longitude: locationData.longitude
+        });
+        setSelectedCustomer({ name: customerName });
+        setShowMapModal(true);
+      } else {
+        console.error("Invalid location format:", response.data);
+        alert("Customer location not available in correct format. Please ask customer to enable location services.");
+      }
+    } catch (error) {
+      console.error("Error fetching customer location:", error);
+      if (error.response) {
+        console.error("Error response:", error.response.data);
+        alert(`Failed to load customer location: ${error.response.data.message || "Unknown error"}`);
+      } else {
+        alert("Failed to load customer location. Please check your connection.");
+      }
     }
-  };
+  } else {
+    alert("Location coordinates not available");
+  }
+};
+
 
   // ----------------------
   // RENDER LOADING
@@ -621,6 +757,7 @@ const fetchProviderRatings = async () => {
   // ----------------------
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 text-gray-800">
+     {showMapModal && <MapModal />}
       {/* Sidebar */}
       <div className="lg:w-80 bg-white p-6 shadow-lg border-r border-gray-200 flex flex-col">
         <div className="text-center mb-8">
@@ -1082,8 +1219,11 @@ console.log("ProfileTab - profile.name:", profile.name);
               Service Location
             </h3>
             <p className="text-gray-800 font-medium">
-              {formatAddress()}
+            {profile.street}, {profile.district}, {profile.municipality}-{profile.ward}
+
             </p>
+            <p className="text-gray-800">{profile.province}</p>
+
             <p className="text-gray-800">
               Coordinates: {profile.latitude ? profile.latitude.toFixed(4) : "N/A"}, {profile.longitude ? profile.longitude.toFixed(4) : "N/A"}
             </p>
@@ -1276,7 +1416,10 @@ function AcceptedTab({ requests, onComplete, onCall, onOpenMap }) {
               </button>
             )}
             <button 
-              onClick={() => onOpenMap(r.latitude, r.longitude)}
+              onClick={() => {
+                console.log("Request data:", r);
+                onOpenMap(r.latitude, r.longitude, r.customerName, r.requestId);
+              }}
               className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium flex items-center justify-center gap-2"
             >
               <MapPin size={16} /> View on Map

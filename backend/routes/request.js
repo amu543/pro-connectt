@@ -539,6 +539,213 @@ router.get("/completed-requests/:customerId", async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 });
+/**
+ * 8.GET /api/request/accepted/:requestId/customer-location
+ * Get customer location for an accepted request (for provider)
+ */
+router.get("/accepted/:requestId/customer-location", async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    
+    console.log("🔍 Fetching customer location for request:", requestId);
+    
+    // Find the request with populated customer data
+    const request = await ServiceRequest.findById(requestId)
+      .populate('customer', 'fullName email phone location currentLocation address municipality district ward landmark')
+      .populate('provider', 'fullName');
+    
+    if (!request) {
+      console.log("❌ Request not found:", requestId);
+      return res.status(404).json({ msg: "Request not found" });
+    }
+    
+    console.log("📋 Request found:", {
+      id: request._id,
+      status: request.status,
+      customerId: request.customer?._id,
+      customerName: request.customer?.fullName
+    });
+    
+    // Check if request is accepted or in-progress
+    if (request.status !== "accepted" && request.status !== "in-progress") {
+      console.log("⚠️ Request status is not accepted:", request.status);
+      return res.status(400).json({ 
+        msg: `Location only available for accepted or in-progress requests. Current status: ${request.status}` 
+      });
+    }
+    
+    // Get customer location from various possible sources
+    const customer = request.customer;
+    let location = null;
+    let locationSource = "";
+    
+    // Priority 1: currentLocation (most up-to-date)
+    if (customer.currentLocation && 
+        customer.currentLocation.coordinates && 
+        customer.currentLocation.coordinates.length === 2 &&
+        !(customer.currentLocation.coordinates[0] === 0 && customer.currentLocation.coordinates[1] === 0)) {
+      location = customer.currentLocation;
+      locationSource = "currentLocation";
+      console.log("📍 Found location in currentLocation");
+    }
+    // Priority 2: location field
+    else if (customer.location && 
+             customer.location.coordinates && 
+             customer.location.coordinates.length === 2 &&
+             !(customer.location.coordinates[0] === 0 && customer.location.coordinates[1] === 0)) {
+      location = customer.location;
+      locationSource = "location";
+      console.log("📍 Found location in location field");
+    }
+    // Priority 3: request location (from when request was created)
+    else if (request.location && 
+             request.location.coordinates && 
+             request.location.coordinates.length === 2) {
+      location = request.location;
+      locationSource = "request";
+      console.log("📍 Found location in request");
+    }
+    
+    if (!location) {
+      console.log("❌ No location found in any source");
+      return res.status(404).json({ 
+        msg: "Customer location not available. Customer needs to enable location services.",
+        debug: {
+          hasCurrentLocation: !!customer.currentLocation,
+          hasLocation: !!customer.location,
+          hasRequestLocation: !!request.location,
+          customerId: customer._id
+        }
+      });
+    }
+    
+    // Build address string
+    let addressString = customer.address || "";
+    if (!addressString && (customer.municipality || customer.district)) {
+      addressString = `${customer.municipality || ''}, ${customer.district || ''}`.trim();
+      if (customer.ward) addressString += `, Ward ${customer.ward}`;
+      if (customer.landmark) addressString += ` (Near: ${customer.landmark})`;
+    }
+    
+    const response = {
+      msg: "Customer location retrieved",
+      locationSource: locationSource,
+      customer: {
+        id: customer._id,
+        fullName: customer.fullName,
+        email: customer.email,
+        phone: customer.phone,
+        address: addressString || "Address not specified"
+      },
+      location: {
+        type: location.type,
+        coordinates: location.coordinates, // [longitude, latitude]
+        latitude: location.coordinates[1],
+        longitude: location.coordinates[0],
+        formattedAddress: addressString
+      },
+      request: {
+        id: request._id,
+        service: request.service,
+        status: request.status,
+        createdAt: request.createdAt
+      }
+    };
+    
+    console.log("✅ Location found:", {
+      lat: response.location.latitude,
+      lng: response.location.longitude,
+      address: response.customer.address
+    });
+    
+    res.json(response);
+    
+  } catch (err) {
+    console.error("❌ Error fetching customer location:", err);
+    res.status(500).json({ 
+      msg: "Server error", 
+      error: err.message 
+    });
+  }
+});
+/**
+ * 9.  Get all accepted requests for a provider with customer locations
+ */
+router.get("/provider/accepted-requests", async (req, res) => {
+  try {
+    const { providerId } = req.query;
+    
+    if (!providerId) {
+      return res.status(400).json({ msg: "Provider ID required" });
+    }
+    
+    console.log("🔍 Fetching accepted requests for provider:", providerId);
+    
+    const requests = await ServiceRequest.find({
+      provider: providerId,
+      status: { $in: ["accepted", "in-progress"] }
+    })
+    .populate('customer', 'fullName email phone location currentLocation address municipality district ward landmark')
+    .sort({ updatedAt: -1 });
+    
+    console.log(`📋 Found ${requests.length} accepted/in-progress requests`);
+    
+    const requestsWithLocations = requests.map(request => {
+      const customer = request.customer;
+      let location = null;
+      
+      // Get location from various sources
+      if (customer.currentLocation?.coordinates?.length === 2 && 
+          !(customer.currentLocation.coordinates[0] === 0 && customer.currentLocation.coordinates[1] === 0)) {
+        location = customer.currentLocation.coordinates;
+      } 
+      else if (customer.location?.coordinates?.length === 2 &&
+               !(customer.location.coordinates[0] === 0 && customer.location.coordinates[1] === 0)) {
+        location = customer.location.coordinates;
+      }
+      else if (request.location?.coordinates?.length === 2) {
+        location = request.location.coordinates;
+      }
+      
+      // Build address
+      let address = customer.address || "";
+      if (!address && (customer.municipality || customer.district)) {
+        address = `${customer.municipality || ''}, ${customer.district || ''}`.trim();
+      }
+      
+      return {
+        requestId: request._id,
+        service: request.service,
+        status: request.status,
+        createdAt: request.createdAt,
+        updatedAt: request.updatedAt,
+        customer: {
+          id: customer._id,
+          fullName: customer.fullName,
+          phone: customer.phone,
+          email: customer.email,
+          address: address
+        },
+        location: location ? {
+          coordinates: location,
+          latitude: location[1],
+          longitude: location[0]
+        } : null,
+        hasLocation: location !== null
+      };
+    });
+    
+    res.json({
+      count: requestsWithLocations.length,
+      requests: requestsWithLocations
+    });
+    
+  } catch (err) {
+    console.error("❌ Error fetching provider requests:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
 
 
 module.exports = router;

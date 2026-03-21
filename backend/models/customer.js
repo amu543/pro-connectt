@@ -46,8 +46,35 @@ const customerSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+customerSchema.add({
+  currentLocation: {
+    type: {
+      type: String,
+      enum: ["Point"],
+      default: "Point"
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      default: [0, 0]
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  address: {
+    type: String,
+    default: ""
+  },
+  street: { type: String, default: "" },
+  municipality: { type: String, default: "" },
+  district: { type: String, default: "" },
+  ward: { type: String, default: "" },
+  landmark: { type: String, default: "" }
+});
 
 // 2dsphere index for geospatial queries
 customerSchema.index({ location: "2dsphere" });
+
 
 module.exports = mongoose.models.Customer || mongoose.model("Customer", customerSchema);

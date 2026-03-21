@@ -1,10 +1,13 @@
 import axios from "axios";
 import { motion } from "framer-motion";
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   Award,
   Calendar,
   CheckCircle,
   ClipboardList,
+  Compass,
   Edit2,
   LogOut,
   Mail,
@@ -17,7 +20,16 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone } from "react-icons/fa";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate, useParams } from "react-router-dom";
+// Fix for default marker icons in React-Leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
 
 // Services images
 import babysitter from "../assets/services/babysitter.jpeg";
@@ -232,6 +244,13 @@ export default function CustomerDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [initialFetchDone, setInitialFetchDone] = useState(false); 
+  const [activeService, setActiveService] = useState(null);
+  const [showMap, setShowMap] = useState(false);
+  const [locationUpdateInterval, setLocationUpdateInterval] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [providerLocation, setProviderLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+  const [isTrackingActive, setIsTrackingActive] = useState(false);
 
   // Updated selectedCategory when URL changes
   useEffect(() => {
@@ -569,6 +588,88 @@ export default function CustomerDashboard() {
     }
     return phone;
   };
+   // Location tracking functions
+const startLocationUpdates = (requestId) => {
+  if (locationUpdateInterval) {
+    clearInterval(locationUpdateInterval);
+  }
+  
+  // Send location immediately
+  sendLocationUpdate(requestId);
+  
+  // Then send every 10 seconds
+  const interval = setInterval(() => {
+    sendLocationUpdate(requestId);
+  }, 10000);
+  
+  setLocationUpdateInterval(interval);
+  setIsTrackingActive(true);
+};
+
+const sendLocationUpdate = async (requestId) => {
+  if (!navigator.geolocation) {
+    setLocationError('Geolocation is not supported by your browser');
+    return;
+  }
+  
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      setCurrentLocation({ latitude, longitude });
+      setLocationError(null);
+      
+      try {
+        // Call your existing updateLocation function from customerService
+        await customerService.updateLocation(latitude, longitude);
+        
+        // Also update the active service location if needed
+        if (requestId) {
+          await api.post(`/api/customer/location/update`, {
+            latitude,
+            longitude,
+            requestId
+          });
+        }
+      } catch (error) {
+        console.error('Failed to update location:', error);
+        setLocationError('Failed to update location. Please check your connection.');
+      }
+    },
+    (error) => {
+      console.error('Geolocation error:', error);
+      setLocationError(`Location error: ${error.message}. Please enable location services.`);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    }
+  );
+};
+
+const stopLocationUpdates = () => {
+  if (locationUpdateInterval) {
+    clearInterval(locationUpdateInterval);
+    setLocationUpdateInterval(null);
+  }
+  setIsTrackingActive(false);
+  setCurrentLocation(null);
+  setProviderLocation(null);
+};
+
+// Initialize map when map tab is opened
+useEffect(() => {
+  if (activeTab === "map" && activeService) {
+    startLocationUpdates(activeService._id);
+    // Leaflet doesn't need any script loading - it's handled by npm package
+  } else if (activeTab !== "map") {
+    stopLocationUpdates();
+  }
+  
+  return () => {
+    stopLocationUpdates();
+  };
+}, [activeTab, activeService]);
 
   // Get initials for avatar
   const getInitials = (name) => {
@@ -729,6 +830,14 @@ const renderStars = (rating) => {
             onClick={() => setActiveTab("services")} 
             badge={SERVICES.length}
           />
+           <SidebarItem 
+            icon={<Navigation size={20} />} 
+            label="Active Map" 
+            active={activeTab === "map"} 
+            onClick={() => setActiveTab("map")} 
+            badge={activeService ? 1 : 0}
+          />
+
         </nav>
 
         <button
@@ -1163,6 +1272,105 @@ const renderStars = (rating) => {
                 </div>
               </div>
             )}
+            
+              {/* ACTIVE SERVICE MAP */}
+                {activeTab === "map" && (
+                  <div>
+                    <div className="mb-8">
+                      <h3 className="text-2xl font-bold text-gray-900">Active Service Tracking</h3>
+                      <p className="text-gray-600 mt-2">Track your service provider in real-time</p>
+                    </div>
+                    
+                    {activeService ? (
+                      <div className="space-y-6">
+                        {/* Service Info Card */}
+                        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                              <h4 className="text-xl font-bold text-gray-900">{activeService.service}</h4>
+                              <p className="text-gray-600 mt-1">
+                                Provider: {activeService.provider?.fullName || 'Provider Name'}
+                              </p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                  activeService.status === "accepted" ? "bg-green-100 text-green-800" :
+                                  activeService.status === "in-progress" ? "bg-blue-100 text-blue-800" :
+                                  "bg-gray-100 text-gray-800"
+                                }`}>
+                                  {activeService.status?.charAt(0).toUpperCase() + activeService.status?.slice(1)}
+                                </span>
+                                {activeService.provider?.distance && (
+                                  <span className="flex items-center gap-1 text-sm text-gray-500">
+                                    <MapPin size={14} />
+                                    {activeService.provider.distance} away
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-3">
+                              {activeService.provider?.phone && (
+                                <a
+                                  href={`tel:${activeService.provider.phone}`}
+                                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                                >
+                                  <Phone size={16} />
+                                  Call Provider
+                                </a>
+                              )}
+                              {activeService.status === "accepted" && (
+                                <button
+                                  onClick={() => handleCompleteRequest(activeService._id, activeService.provider?.fullName)}
+                                  className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2"
+                                >
+                                  <CheckCircle size={16} />
+                                  Complete Service
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Location Status */}
+                        <div className={`p-4 rounded-lg ${locationError ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-3 h-3 rounded-full ${isTrackingActive && !locationError ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                            <p className="text-sm font-medium">
+                              {locationError ? locationError : 
+                              isTrackingActive ? "📍 Sharing your location with the provider" : 
+                              "Location sharing is not active"}
+                            </p>
+                          </div>
+                          {currentLocation && !locationError && (
+                            <p className="text-xs text-gray-600 mt-2">
+                              Last update: {new Date().toLocaleTimeString()}
+                            </p>
+                          )}
+                        </div>
+                        
+                        {/* Map */}
+                        <ServiceMapComponent />
+                        
+                        {/* Instructions */}
+                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                          <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                            <Compass size={16} />
+                            Service Instructions
+                          </h5>
+                          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                            <li>Your location is being shared with the service provider for accurate arrival</li>
+                            <li>Provider can see your real-time location while the service is active</li>
+                            <li>You can call the provider using the button above</li>
+                            <li>Click "Complete Service" when the work is finished</li>
+                          </ul>
+                        </div>
+                      </div>
+                    ) : (
+                      <NoActiveServiceMap />
+                    )}
+                  </div>
+                )}
+
 
             {/* BROWSE SERVICES */}
             {activeTab === "services" && (
@@ -1710,6 +1918,105 @@ function InfoField({ label, value, isEditing, onChange, type = "text", disabled 
     </div>
   );
 }
+// Map Component for Active Service - Leaflet Version
+const ServiceMapComponent = () => {
+  const position = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : null;
+  const providerPos = providerLocation ? [providerLocation.latitude, providerLocation.longitude] : null;
+  
+  const ChangeView = ({ center }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (center) {
+        map.setView(center, 15);
+      }
+    }, [center, map]);
+    return null;
+  };
+  
+  if (!position) {
+    return (
+      <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 mx-auto mb-3 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+          <p className="text-gray-500">Waiting for location...</p>
+          <p className="text-gray-400 text-sm mt-2">Please enable location services</p>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200">
+      <MapContainer
+        center={position}
+        zoom={15}
+        style={{ height: '100%', width: '100%' }}
+        zoomControl={true}
+        scrollWheelZoom={true}
+      >
+        <ChangeView center={position} />
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {/* Customer Marker */}
+        <Marker position={position}>
+          <Popup>
+            <div className="p-2">
+              <strong className="text-gray-900">Your Location</strong><br />
+              📍 Service in progress<br />
+              <small className="text-gray-600">
+                You are here
+              </small>
+            </div>
+          </Popup>
+        </Marker>
+        
+        {/* Provider Marker - if location available */}
+        {providerPos && (
+          <Marker 
+            position={providerPos}
+            icon={L.divIcon({
+              className: 'custom-div-icon',
+              html: '<div style="background-color: #3b82f6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+              iconSize: [12, 12],
+              popupAnchor: [0, -6]
+            })}
+          >
+            <Popup>
+              <div className="p-2">
+                <strong className="text-gray-900">Provider Location</strong><br />
+                🚗 {activeService?.provider?.fullName || 'Provider'} is here<br />
+                <small className="text-gray-600">
+                  Moving towards you
+                </small>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+      </MapContainer>
+    </div>
+  );
+};
+
+// Inside CustomerDashboard component, before return:
+const NoActiveServiceMap = () => (
+  <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
+    <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+      <MapPin size={40} className="text-gray-400" />
+    </div>
+    <h3 className="text-xl font-semibold text-gray-800 mb-2">No Active Service</h3>
+    <p className="text-gray-600 mb-6">
+      You don't have any active service requests right now.
+    </p>
+    <button
+      onClick={() => setActiveTab("services")}
+      className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+    >
+      Browse Services
+    </button>
+  </div>
+);
 
 // Helper function for initials
 function getInitials(name) {
