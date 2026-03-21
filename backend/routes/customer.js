@@ -7,6 +7,9 @@ const nodemailer = require("nodemailer");
 const Customer = require("../models/customer");
 const ServiceProvider = require("../models/ServiceProvider");
 const customerAuth = require("../middleware/customerAuth");
+const crypto = require("crypto");
+const PasswordReset = require("../models/PasswordReset");
+
 require("dotenv").config();
 
 const transporter = nodemailer.createTransport({
@@ -253,6 +256,223 @@ router.post("/resend-otp", async (req, res) => {
   } catch (err) {
     console.error("Resend OTP error:", err);
     res.status(500).json({ msg: "Server error" });
+  }
+});
+// Forgot password - Customer
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    
+    const customer = await Customer.findOne({ email: email.toLowerCase() });
+    
+    if (!customer) {
+      return res.status(404).json({ error: "Email not found. Please register first." });
+    }
+    
+    if (customer.isVerified === false) {
+      return res.status(403).json({ error: "Please verify your email first." });
+    }
+    
+    // Delete existing OTPs for this email
+    await PasswordReset.deleteMany({ email: email.toLowerCase(), userType: "customer" });
+    
+    // Generate OTP (6 digits)
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 300000); // 5 minutes
+    
+    // Save OTP
+    await PasswordReset.create({
+      email: email.toLowerCase(),
+      otp: otp,
+      userType: "customer",
+      expiresAt
+    });
+    
+    // Send OTP via email
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_SERVICE_USER,
+        pass: process.env.EMAIL_SERVICE_PASS,
+      },
+    });
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVICE_USER,
+      to: email,
+      subject: "Pro Connect - Password Reset OTP",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+          <h2 style="color: #333;">Password Reset OTP</h2>
+          <p>Hello ${customer.fullName || "Customer"},</p>
+          <p>Your OTP for password reset is:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; background: #f5f5f5; padding: 15px; border-radius: 8px; display: inline-block;">
+              ${otp}
+            </div>
+          </div>
+          <p>This OTP is valid for <strong>5 minutes</strong>.</p>
+          <p>If you didn't request this, please ignore this email.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #999; font-size: 12px;">Pro Connect - Connecting Professionals</p>
+        </div>
+      `
+    });
+    
+    console.log(`Password reset OTP sent to ${email}: ${otp}`);
+    
+    res.json({ 
+      message: "OTP sent to your email. Valid for 5 minutes.",
+      email: email
+    });
+    
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ error: "Server error: " + error.message });
+  }
+});
+
+// Verify OTP (Customer)
+router.post("/verify-reset-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    
+    if (!email || !otp) {
+      return res.status(400).json({ error: "Email and OTP are required" });
+    }
+    
+    const resetRecord = await PasswordReset.findOne({
+      email: email.toLowerCase(),
+      userType: "customer",
+      otp: otp,
+      used: false,
+      expiresAt: { $gt: new Date() }
+    });
+    
+    if (!resetRecord) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+    
+    res.json({ valid: true, message: "OTP verified successfully" });
+    
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Reset password with OTP (Customer)
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, otp, newPassword, confirmPassword } = req.body;
+    
+    if (!email || !otp || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+    
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: "Passwords do not match" });
+    }
+    
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({
+        error: "Password must be at least 8 characters with uppercase, lowercase, number and special character"
+      });
+    }
+    
+    const resetRecord = await PasswordReset.findOne({
+      email: email.toLowerCase(),
+      userType: "customer",
+      otp: otp,
+      used: false,
+      expiresAt: { $gt: new Date() }
+    });
+    
+    if (!resetRecord) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    await Customer.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { password: hashedPassword }
+    );
+    
+    resetRecord.used = true;
+    await resetRecord.save();
+    
+    res.json({ message: "Password reset successfully! You can now login with your new password." });
+    
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Resend OTP (Customer)
+router.post("/resend-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    
+    const customer = await Customer.findOne({ email: email.toLowerCase() });
+    
+    if (!customer) {
+      return res.status(404).json({ error: "Email not found" });
+    }
+    
+    // Delete existing OTPs
+    await PasswordReset.deleteMany({ email: email.toLowerCase(), userType: "customer" });
+    
+    // Generate new OTP
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 300000);
+    
+    await PasswordReset.create({
+      email: email.toLowerCase(),
+      otp: otp,
+      userType: "customer",
+      expiresAt
+    });
+    
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_SERVICE_USER,
+        pass: process.env.EMAIL_SERVICE_PASS,
+      },
+    });
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVICE_USER,
+      to: email,
+      subject: "Pro Connect - Password Reset OTP",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px;">
+          <h2>Password Reset OTP</h2>
+          <p>Hello ${customer.fullName || "Customer"},</p>
+          <p>Your new OTP is: <strong style="font-size: 24px;">${otp}</strong></p>
+          <p>Valid for 5 minutes.</p>
+        </div>
+      `
+    });
+    
+    console.log(`Resent OTP to ${email}: ${otp}`);
+    
+    res.json({ message: "New OTP sent to your email" });
+    
+  } catch (error) {
+    console.error("Resend OTP error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 

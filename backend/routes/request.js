@@ -490,17 +490,27 @@ router.get("/completed-requests/:customerId", async (req, res) => {
       console.log(`Provider ${index}: ${req.provider?.fullName} - Photo: ${req.provider?.profilePhoto}`);
     });
     // Add completedAt to the response if not present
+     const validRequests = requests.filter(req => req.provider !== null);
     
-     const requestsWithReviews = await Promise.all(
-      requests.map(async (req) => {
+    if (validRequests.length !== requests.length) {
+      console.log(`⚠️ Filtered out ${requests.length - validRequests.length} requests with missing provider`);
+    }
+    
+    validRequests.forEach((req, index) => {
+      console.log(`Provider ${index}: ${req.provider?.fullName || 'Deleted Provider'} - Photo: ${req.provider?.profilePhoto || 'N/A'}`);
+    });
+      const requestsWithReviews = await Promise.all(
+      validRequests.map(async (req) => {
         const reqObj = req.toObject();
         
+        // Check if provider exists before trying to access _id
+        if (req.provider && req.provider._id) {
+          // Find review for this provider from this customer
+          const review = await Rating.findOne({
+            serviceProviderId: req.provider._id,
+            customerId: customerId
+          });
         // Find review for this provider from this customer
-        const review = await Rating.findOne({
-          serviceProviderId: req.provider._id,
-          customerId: customerId
-        });
-        
         if (review) {
           reqObj.review = {
             rating: review.rating,
@@ -508,7 +518,13 @@ router.get("/completed-requests/:customerId", async (req, res) => {
             createdAt: review.createdAt
           };
         }
-        
+        } else {
+          // Add placeholder for deleted provider
+          reqObj.provider = {
+            fullName: "Provider (deleted)",
+            service: "Service no longer available"
+          };
+        }
         if (!reqObj.completedAt) {
           reqObj.completedAt = reqObj.updatedAt || reqObj.createdAt;
         }

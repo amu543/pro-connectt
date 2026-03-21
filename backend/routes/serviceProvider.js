@@ -7,6 +7,8 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Tesseract = require("tesseract.js");
+const crypto = require("crypto");
+const PasswordReset = require("../models/PasswordReset");
 // serviceProvider.js
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 
@@ -627,6 +629,16 @@ function detectIDType(text) {
   if (/\d{2}-\d{2}-\d{2}-\d{5}/.test(text)) return "Citizenship";
   if (/\d{2}-\d{2}-\d{3,6}/.test(text)) return "License";
   if (/[A-Z][0-9]{7}/.test(text)) return "Passport";
+  if (/\d{4}\/\d{5}/.test(text)) return "Citizenship";
+  if (/^\d{4}$/.test(text) || /^\d{5}$/.test(text)) {
+    // Check if it's likely a citizenship number
+    if (text.toLowerCase().includes('citizenship') || 
+        text.includes('नागरिकता') ||
+        text.includes('नं') ||
+        text.includes('no.')) {
+      return "Citizenship";
+    }
+  }
   return "Unknown";
 }
 
@@ -913,10 +925,49 @@ const extraCertificatePaths = extraCertFiles.map(f => saveFile(f, "Extra Certifi
       // Flexible ID type detection
       const robustDetectIDType = text => {
         const normalized = normalizeText(text).replace(/[-.\s]/g, "");
-        if (/\d{2}\d{2}\d{2}\d{5}/.test(normalized)) return "Citizenship";
+      const lowerText = text.toLowerCase();
+  
+  // Check for citizenship keywords first
+  const hasCitizenshipKeyword = lowerText.includes('citizenship') || 
+                                lowerText.includes('नागरिकता') ||
+                                lowerText.includes('नेपाल सरकार') ||
+                                lowerText.includes('नेपाल');
+  
+  // Check for common citizenship number patterns
+  const citizenshipPatterns = [
+    /\d{2}-\d{2}-\d{2}-\d{5}/,  // XX-XX-XX-XXXXX
+    /\d{4}\/\d{5}/,              // XXXX/XXXXX
+    /\d{3}\/\d{5}/,              // XXX/XXXXX
+    /\d{2}\/\d{5}/,              // XX/XXXXX
+    /^\d{4}$/,                   // XXXX
+    /^\d{5}$/,                   // XXXXX
+    /\d{10}/                     // 10 digits
+  ];
+  
+  // Check if any citizenship pattern matches
+  let matchedPattern = false;
+  for (const pattern of citizenshipPatterns) {
+    if (pattern.test(normalized)) {
+      matchedPattern = true;
+      break;
+    }
+  }
+  
+  // If we have citizenship keywords OR a matching number pattern
+  if (hasCitizenshipKeyword || matchedPattern) {
+    // Also check for license patterns to avoid false positives
+    const isLicense = /\d{2}-\d{2}-\d{5}/.test(normalized) && !hasCitizenshipKeyword;
+    if (!isLicense) {
+      return "Citizenship";
+    }
+  }
         if (/^\d{5,8}$/.test(normalized)) return "License";
         if (/^\d{10}$/.test(normalized)) return "National ID";
         if (/^[A-Z][0-9]{7}$/.test(normalized)) return "Passport";
+        if (/\d{4}\/\d{5}/.test(text)) return "Citizenship";
+        if (hasCitizenshipKeyword) {
+    return "Citizenship";
+  }
         return "Unknown";
       };
 
@@ -1079,7 +1130,8 @@ router.post("/sp-login", async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
-
+     sp.isOnline = true;
+    await sp.save();
     res.json({
       message: "Login successful",
       token,
@@ -1103,19 +1155,21 @@ router.post("/sp-login", async (req, res) => {
 router.post("/sp-logout", spAuth, async (req, res) => {
   try {
     // 🔐 Role verification
-    if (req.user.role !== "Provider") {
+    const userRole = (req.user.role || "").toLowerCase();
+     if (userRole !== "provider" && userRole !== "serviceprovider") {
       return res.status(403).json({ error: "Unauthorized role" });
     }
 
-    console.log("sp: Service Provider logged out:", req.user.id);
+    console.log("sp: Service Provider logged out:", req.user.role);
     // ✅ Set SP offline in database
     const sp = await ServiceProvider.findById(req.user.id);
     if (sp) {
-      sp.isOnline = false;
-      sp.socketId = null; // optional: clear socket
-      await sp.save();
+     
       console.log("sp: Service Provider set offline:", req.user.id);
     }
+     sp.isOnline = false;
+      sp.socketId = null; // optional: clear socket
+      await sp.save();
     // 🚫 JWT is stateless → frontend must delete it
     res.json({
       success: true,
@@ -1128,7 +1182,15 @@ router.post("/sp-logout", spAuth, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
+ // Add this to your backend for debugging
+router.get("/sp-online-status", async (req, res) => {
+  try {
+    const providers = await ServiceProvider.find({}, "fullName email isOnline");
+    res.json(providers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Update current GPS location
 // ---------------------------
@@ -1204,5 +1266,274 @@ router.get("/sp-file/:userId/:fileType", spAuth, async (req, res) => {
     res.status(500).json({ error: "sp: Server error", details: err.message });
   }
 });
+// Forgot password - Provider
+router.post("/sp-forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    
+    const provider = await ServiceProvider.findOne({ email: email.toLowerCase() });
+    
+    if (!provider) {
+      return res.status(404).json({ error: "Email not found. Please register first." });
+    }
+    
+    if (provider.isVerified === false) {
+      return res.status(403).json({ error: "Please verify your email first." });
+    }
+    
+    // Delete existing OTPs for this email
+    await PasswordReset.deleteMany({ email: email.toLowerCase(), userType: "provider" });
+    
+    // Generate OTP (6 digits)
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 300000); // 5 minutes
+    
+    // Save OTP
+    await PasswordReset.create({
+      email: email.toLowerCase(),
+      otp: otp,
+      userType: "provider",
+      expiresAt
+    });
+    
+    // Send OTP via email
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_SERVICE_USER,
+        pass: process.env.EMAIL_SERVICE_PASS,
+      },
+    });
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVICE_USER,
+      to: email,
+      subject: "Pro Connect - Password Reset OTP",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+          <h2 style="color: #333;">Password Reset OTP</h2>
+          <p>Hello ${provider.fullName || "Service Provider"},</p>
+          <p>Your OTP for password reset is:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; background: #f5f5f5; padding: 15px; border-radius: 8px; display: inline-block;">
+              ${otp}
+            </div>
+          </div>
+          <p>This OTP is valid for <strong>5 minutes</strong>.</p>
+          <p>If you didn't request this, please ignore this email.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #999; font-size: 12px;">Pro Connect - Connecting Professionals</p>
+        </div>
+      `
+    });
+    
+    console.log(`Password reset OTP sent to ${email}: ${otp}`);
+    
+    res.json({ 
+      message: "OTP sent to your email. Valid for 5 minutes.",
+      email: email
+    });
+    
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ error: "Server error: " + error.message });
+  }
+});
 
+// Verify OTP (Provider)
+router.post("/sp-verify-reset-otp", async (req, res) => {
+  try {
+    console.log("=== VERIFY RESET OTP BACKEND ===");
+    console.log("Request body:", req.body);
+    
+    const { email, otp } = req.body;
+    
+    if (!email || !otp) {
+      return res.status(400).json({ error: "Email and OTP are required" });
+    }
+      // Clean up inputs
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanOtp = otp.toString().trim();
+    
+    console.log("Searching for:", { 
+      email: cleanEmail, 
+      userType: "provider", 
+      otp: cleanOtp 
+    });
+    
+    // First, check if any OTP exists for this email
+    const allOtps = await PasswordReset.find({ 
+      email: cleanEmail,
+      userType: "provider"
+    });
+    console.log("All OTPs for this email:", allOtps.map(o => ({ 
+      otp: o.otp, 
+      used: o.used, 
+      expiresAt: o.expiresAt,
+      isExpired: o.expiresAt < new Date()
+    })));
+    const resetRecord = await PasswordReset.findOne({
+      email: email.toLowerCase(),
+      userType: "provider",
+      otp: otp,
+      used: false,
+      expiresAt: { $gt: new Date() }
+    });
+    
+    if (!resetRecord) {
+       // Check if OTP exists but is used
+      const usedRecord = await PasswordReset.findOne({
+        email: email,
+        userType: "provider",
+        otp: otp,
+        used: true
+      });
+      if (usedRecord) {
+        return res.status(400).json({ error: "OTP has already been used" });
+      }
+      
+      // Check if OTP exists but expired
+      const expiredRecord = await PasswordReset.findOne({
+        email: email,
+        userType: "provider",
+        otp: otp,
+        expiresAt: { $lt: new Date() }
+      });
+      if (expiredRecord) {
+        return res.status(400).json({ error: "OTP has expired" });
+      }
+      
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+    
+    res.json({ valid: true, message: "OTP verified successfully" });
+    
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Reset password with OTP (Provider)
+router.post("/sp-reset-password", async (req, res) => {
+  try {
+    const { email, otp, newPassword, confirmPassword } = req.body;
+    
+    if (!email || !otp || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+    
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: "Passwords do not match" });
+    }
+    
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({
+        error: "Password must be at least 8 characters with uppercase, lowercase, number and special character"
+      });
+    }
+     const cleanEmail = email.toLowerCase().trim();
+    const cleanOtp = otp.toString().trim();
+    const resetRecord = await PasswordReset.findOne({
+      email: cleanEmail,
+      userType: "provider",
+      otp: cleanOtp,
+      used: false,
+      expiresAt: { $gt: new Date() }
+    });
+    
+    if (!resetRecord) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    const updated = await ServiceProvider.findOneAndUpdate(
+      { email: cleanEmail },
+      { password: hashedPassword },
+      { new: true }
+    );
+    
+    if (!updated) {
+      return res.status(404).json({ error: "Provider not found" });
+    }
+    
+    resetRecord.used = true;
+    await resetRecord.save();
+    
+    console.log(`Password reset successfully for ${email}`);
+    
+    res.json({ message: "Password reset successfully! You can now login with your new password." });
+    
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Resend OTP (Provider)
+router.post("/sp-resend-otp-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    
+    const provider = await ServiceProvider.findOne({ email: email.toLowerCase() });
+    
+    if (!provider) {
+      return res.status(404).json({ error: "Email not found" });
+    }
+    
+    // Delete existing OTPs
+    await PasswordReset.deleteMany({ email: email.toLowerCase(), userType: "provider" });
+    
+    // Generate new OTP
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 300000);
+    
+    await PasswordReset.create({
+      email: email.toLowerCase(),
+      otp: otp,
+      userType: "provider",
+      expiresAt
+    });
+    
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_SERVICE_USER,
+        pass: process.env.EMAIL_SERVICE_PASS,
+      },
+    });
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVICE_USER,
+      to: email,
+      subject: "Pro Connect - Password Reset OTP",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px;">
+          <h2>Password Reset OTP</h2>
+          <p>Hello ${provider.fullName || "Service Provider"},</p>
+          <p>Your new OTP is: <strong style="font-size: 24px;">${otp}</strong></p>
+          <p>Valid for 5 minutes.</p>
+        </div>
+      `
+    });
+    
+    console.log(`Resent OTP to ${email}: ${otp}`);
+    
+    res.json({ message: "New OTP sent to your email" });
+    
+  } catch (error) {
+    console.error("Resend OTP error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 module.exports = router;

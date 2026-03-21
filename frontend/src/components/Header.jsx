@@ -31,7 +31,206 @@ const Header = () => {
   const isLoggedIn = !!token;
   const userName = userData.name || userData.FullName || userData.fullName || "User";
   const userRole = userData.role || localStorage.getItem("role");
+ const [showForgotPassword, setShowForgotPassword] = useState(false);
+const [forgotStep, setForgotStep] = useState("email"); // 'email', 'otp', 'password'
+const [forgotEmail, setForgotEmail] = useState("");
+const [forgotUserType, setForgotUserType] = useState("customer");
+const [forgotOtp, setForgotOtp] = useState(["", "", "", "", "", ""]);
+const [newPassword, setNewPassword] = useState("");
+const [confirmPassword, setConfirmPassword] = useState("");
+const [showPassword, setShowPassword] = useState(false);
+const [timer, setTimer] = useState(0);
+const [forgotLoading, setForgotLoading] = useState(false);
+const [forgotMessage, setForgotMessage] = useState("");
+const [forgotError, setForgotError] = useState("");
+const otpInputRefs = useRef([]);
+// Timer effect
+useEffect(() => {
+  let interval;
+  if (timer > 0) {
+    interval = setInterval(() => {
+      setTimer((prev) => prev - 1);
+    }, 1000);
+  }
+  return () => clearInterval(interval);
+}, [timer]);
 
+const formatTime = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+};
+// Handle OTP input
+const handleOtpChange = (index, value) => {
+  if (!/^\d?$/.test(value)) return;
+  const newOtp = [...forgotOtp];
+  newOtp[index] = value;
+  setForgotOtp(newOtp);
+  if (value && index < 5) {
+    otpInputRefs.current[index + 1]?.focus();
+  }
+};
+const handleKeyDown = (index, e) => {
+  if (e.key === "Backspace" && !forgotOtp[index] && index > 0) {
+    otpInputRefs.current[index - 1]?.focus();
+  }
+};
+
+// Send OTP
+const handleSendOtp = async (e) => {
+  e.preventDefault();
+  setForgotLoading(true);
+  setForgotError("");
+  setForgotMessage("");
+  
+  try {
+    const endpoint = forgotUserType === "customer" 
+      ? "/customer/forgot-password" 
+      : "/service-provider/sp-forgot-password";
+    
+    const response = await axios.post(`${API_BASE_URL}${endpoint}`, {
+      email: forgotEmail
+    });
+    
+    setForgotMessage(response.data.message);
+    setForgotStep("otp");
+    setTimer(300); // 5 minutes timer
+    setTimeout(() => {
+      otpInputRefs.current[0]?.focus();
+    }, 100);
+  } catch (error) {
+    setForgotError(error.response?.data?.error || "Something went wrong");
+  } finally {
+    setForgotLoading(false);
+  }
+};
+
+// Verify OTP
+const handleVerifyOtp = async (e) => {
+  e.preventDefault();
+  const otpValue = forgotOtp.join("");
+  console.log("=== VERIFY OTP DEBUG ===");
+  console.log("OTP Value:", otpValue);
+  console.log("Email:", forgotEmail);
+  console.log("User Type:", forgotUserType);
+ 
+  
+  if (otpValue.length !== 6) {
+    setForgotError("Please enter all 6 digits");
+    return;
+  }
+  
+  setForgotLoading(true);
+  setForgotError("");
+  
+  try {
+    const endpoint = forgotUserType === "customer" 
+      ? "/customer/verify-reset-otp" 
+      : "/service-provider/sp-verify-reset-otp";
+      console.log("Endpoint:", `${API_BASE_URL}${endpoint}`); 
+    
+    const payload = {
+      email: forgotEmail,
+      otp: otpValue
+    };
+    
+    console.log("Sending payload:", payload);
+    
+    const response = await axios.post(`${API_BASE_URL}${endpoint}`, payload);
+    
+    console.log("Response:", response.data);
+    
+    setForgotMessage("OTP verified! Set your new password.");
+    setForgotStep("password");
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    console.error("Error response:", error.response?.data);
+    console.error("Error status:", error.response?.status);
+    setForgotError(error.response?.data?.error || "Invalid OTP");
+    setForgotOtp(["", "", "", "", "", ""]);
+    otpInputRefs.current[0]?.focus();
+  } finally {
+    setForgotLoading(false);
+  }
+};
+  
+ 
+// Reset password
+const handleResetPassword = async (e) => {
+  e.preventDefault();
+  
+  if (newPassword !== confirmPassword) {
+    setForgotError("Passwords do not match");
+    return;
+  }
+  
+  if (newPassword.length < 8) {
+    setForgotError("Password must be at least 8 characters");
+    return;
+  }
+  
+  const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+  if (!strongPasswordRegex.test(newPassword)) {
+    setForgotError("Password must include uppercase, lowercase, number, and special character");
+    return;
+  }
+  
+  setForgotLoading(true);
+  setForgotError("");
+  
+  try {
+    const endpoint = forgotUserType === "customer" 
+      ? "/customer/reset-password" 
+      : "/service-provider/sp-reset-password";
+    
+    const response = await axios.post(`${API_BASE_URL}${endpoint}`, {
+      email: forgotEmail,
+      otp: forgotOtp.join(""),
+      newPassword,
+      confirmPassword
+    });
+    
+    setForgotMessage(response.data.message);
+    setTimeout(() => {
+      setShowForgotPassword(false);
+      setForgotStep("email");
+      setForgotEmail("");
+      setForgotOtp(["", "", "", "", "", ""]);
+      setNewPassword("");
+      setConfirmPassword("");
+      setForgotMessage("");
+    }, 3000);
+  } catch (error) {
+    setForgotError(error.response?.data?.error || "Something went wrong");
+  } finally {
+    setForgotLoading(false);
+  }
+};
+
+// Resend OTP
+const handleResendOtp = async () => {
+  setForgotLoading(true);
+  setForgotError("");
+  
+  try {
+    const endpoint = forgotUserType === "customer" 
+      ? "/customer/resend-otp" 
+      : "/service-provider/sp-resend-otp-password";
+    
+    const response = await axios.post(`${API_BASE_URL}${endpoint}`, {
+      email: forgotEmail
+    });
+    
+    setForgotMessage(response.data.message);
+    setTimer(300);
+    setForgotOtp(["", "", "", "", "", ""]);
+    otpInputRefs.current[0]?.focus();
+  } catch (error) {
+    setForgotError(error.response?.data?.error || "Failed to resend OTP");
+  } finally {
+    setForgotLoading(false);
+  }
+};
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -175,9 +374,11 @@ const Header = () => {
       if (role === "customer") {
         // Customer might have _id, id, or customerId
         userId = user._id || user.id || user.customerId;
+        console.log("Customer ID extracted:", userId);
       } else {
         // Provider might have _id, id, or providerId
         userId = user._id || user.id || user.providerId;
+        console.log("Provider ID extracted:", userId);
       }
       
       console.log("Extracted User ID:", userId);
@@ -266,7 +467,33 @@ const Header = () => {
       navigate("/", { replace: true });
     }
   };
-
+ const handleForgotPassword = async (e) => {
+  e.preventDefault();
+  setForgotLoading(true);
+  setForgotError("");
+  setForgotMessage("");
+  
+  try {
+    const endpoint = forgotUserType === "customer" 
+      ? "/customer/forgot-password" 
+      : "/service-provider/sp-forgot-password";
+    
+    const response = await axios.post(`${API_BASE_URL}${endpoint}`, {
+      email: forgotEmail
+    });
+    
+    setForgotMessage(response.data.message);
+    setTimeout(() => {
+      setShowForgotPassword(false);
+      setForgotEmail("");
+      setForgotMessage("");
+    }, 3000);
+  } catch (error) {
+    setForgotError(error.response?.data?.error || "Something went wrong");
+  } finally {
+    setForgotLoading(false);
+  }
+};
   // Go to profile dashboard
   const goToProfile = () => {
     setDropdownOpen(false);
@@ -588,7 +815,7 @@ const Header = () => {
               <div className="mt-6 text-center">
                 <button
                   type="button"
-                  onClick={() => alert("Please contact support to reset your password")}
+                  onClick={() =>  setShowForgotPassword(true)}
                   className="text-blue-600 hover:text-blue-800 font-medium text-sm"
                 >
                   Forgot Password?
@@ -598,7 +825,227 @@ const Header = () => {
           </div>
         </div>
       </div>
-
+     {showForgotPassword && (
+  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
+    <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-2xl font-bold">Reset Password</h3>
+        <button
+          onClick={() => {
+            setShowForgotPassword(false);
+            setForgotStep("email");
+            setForgotMessage("");
+            setForgotError("");
+          }}
+          className="text-gray-500 hover:text-gray-700"
+        >
+          <HiX size={24} />
+        </button>
+      </div>
+      
+      {forgotMessage && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-green-600 text-sm">{forgotMessage}</p>
+        </div>
+      )}
+      
+      {forgotError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-600 text-sm">{forgotError}</p>
+        </div>
+      )}
+      
+      {/* Step 1: Enter Email */}
+      {forgotStep === "email" && (
+        <form onSubmit={handleSendOtp}>
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2 font-semibold text-sm">
+              Account Type
+            </label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setForgotUserType("customer")}
+                className={`flex-1 py-2 rounded-lg font-semibold ${
+                  forgotUserType === "customer"
+                    ? "bg-black text-white"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                Customer
+              </button>
+              <button
+                type="button"
+                onClick={() => setForgotUserType("provider")}
+                className={`flex-1 py-2 rounded-lg font-semibold ${
+                  forgotUserType === "provider"
+                    ? "bg-black text-white"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                Provider
+              </button>
+            </div>
+          </div>
+          
+          <div className="mb-6">
+            <label className="block text-gray-700 mb-2 font-semibold text-sm">
+              Email Address
+            </label>
+            <input
+              type="email"
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              placeholder="Enter your registered email"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-black focus:outline-none"
+              required
+            />
+          </div>
+          
+          <button
+            type="submit"
+            disabled={forgotLoading}
+            className="w-full py-3 bg-black text-white rounded-xl font-semibold hover:bg-gray-800 disabled:opacity-50"
+          >
+            {forgotLoading ? "Sending OTP..." : "Send OTP"}
+          </button>
+        </form>
+      )}
+      
+      {/* Step 2: Enter OTP */}
+      {forgotStep === "otp" && (
+        <form onSubmit={handleVerifyOtp}>
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2 font-semibold text-sm">
+              Enter OTP
+            </label>
+            <p className="text-sm text-gray-600 mb-4">
+              We've sent a 6-digit OTP to <strong>{forgotEmail}</strong>
+            </p>
+            
+            <div className="flex justify-center gap-2 mb-4">
+              {[0, 1, 2, 3, 4, 5].map((index) => (
+                <input
+                  key={index}
+                  ref={(el) => (otpInputRefs.current[index] = el)}
+                  type="text"
+                  maxLength="1"
+                  value={forgotOtp[index]}
+                  onChange={(e) => handleOtpChange(index, e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(index, e)}
+                  className="w-12 h-12 text-center text-xl font-bold rounded-lg border border-gray-300 focus:border-black focus:outline-none"
+                  disabled={forgotLoading}
+                />
+              ))}
+            </div>
+            
+            {timer > 0 ? (
+              <p className="text-sm text-gray-600 text-center mb-4">
+                OTP expires in: <span className="font-medium">{formatTime(timer)}</span>
+              </p>
+            ) : (
+              <p className="text-sm text-red-600 text-center mb-4">
+                OTP expired.{" "}
+                <button 
+                  type="button" 
+                  onClick={handleResendOtp} 
+                  className="text-blue-600 hover:underline"
+                  disabled={forgotLoading}
+                >
+                  Resend OTP
+                </button>
+              </p>
+            )}
+          </div>
+          
+          <button
+            type="submit"
+            disabled={forgotLoading || forgotOtp.join("").length !== 6}
+            className="w-full py-3 bg-black text-white rounded-xl font-semibold hover:bg-gray-800 disabled:opacity-50"
+          >
+            {forgotLoading ? "Verifying..." : "Verify OTP"}
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              setForgotStep("email");
+              setForgotError("");
+            }}
+            className="w-full mt-3 py-2 text-gray-600 hover:text-gray-800 text-sm"
+          >
+            ← Back to email
+          </button>
+        </form>
+      )}
+      
+      {/* Step 3: Set New Password */}
+      {forgotStep === "password" && (
+        <form onSubmit={handleResetPassword}>
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2 font-semibold text-sm">
+              New Password
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 pr-12 focus:border-black focus:outline-none"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
+              >
+                {showPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
+          </div>
+          
+          <div className="mb-6">
+            <label className="block text-gray-700 mb-2 font-semibold text-sm">
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm new password"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-black focus:outline-none"
+              required
+            />
+          </div>
+          
+          <p className="text-xs text-gray-500 mb-4">
+            Password must be at least 8 characters with uppercase, lowercase, number and special character
+          </p>
+          
+          <button
+            type="submit"
+            disabled={forgotLoading}
+            className="w-full py-3 bg-black text-white rounded-xl font-semibold hover:bg-gray-800 disabled:opacity-50"
+          >
+            {forgotLoading ? "Resetting..." : "Reset Password"}
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              setForgotStep("otp");
+              setForgotError("");
+            }}
+            className="w-full mt-3 py-2 text-gray-600 hover:text-gray-800 text-sm"
+          >
+            ← Back to OTP
+          </button>
+        </form>
+      )}
+    </div>
+  </div>
+)}
       {/* Mobile Logout */}
       {isLoggedIn && (
         <div className="md:hidden fixed bottom-6 right-6 z-40">

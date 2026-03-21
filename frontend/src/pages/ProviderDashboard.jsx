@@ -439,18 +439,69 @@ const removeSkill = (skillToRemove) => {
   };
 
   const handleLogout = async () => {
+    
+      setLoading(true);
     try {
-      await api.post("/service-provider/sp-logout");
-    } catch (error) {
-      console.error("Logout API error:", error);
-    } finally {
+    // Make sure we have a valid token
+    const token = localStorage.getItem("token");
+    if (!token) {
+      // No token, just redirect
       localStorage.removeItem("token");
       localStorage.removeItem("userData");
       localStorage.removeItem("role");
       navigate("/");
+      return;
+    }
+  
+    
+    // Call logout API
+    const response = await api.post("/service-provider/sp-logout");
+    console.log("Logout response:", response.data);
+    
+    // If we get here, logout was successful
+    localStorage.removeItem("token");
+    localStorage.removeItem("userData");
+    localStorage.removeItem("role");
+    navigate("/");
+    
+  } catch (error) {
+    console.error("Logout API error:", error);
+    
+    // Even if API fails, we should still clear local storage
+    // to prevent the user from staying logged in
+    if (error.response?.status === 401) {
+      // Token is invalid, just clear storage
+      console.log("Token invalid, clearing storage");
+    } else {
+      // Other error, but still clear storage to be safe
+      console.error("Logout failed but clearing local storage anyway");
+    }
+    
+    // Always clear local storage on logout attempt
+    localStorage.removeItem("token");
+    localStorage.removeItem("userData");
+    localStorage.removeItem("role");
+    
+    // Redirect to login
+    navigate("/");
+  } finally {
+    setLoading(false);
+  }
+};
+useEffect(() => {
+  const checkOnlineStatus = async () => {
+    try {
+      const response = await api.get("/service-provider/sp-online-status");
+      console.log("Current online status:", response.data.isOnline);
+    } catch (error) {
+      console.error("Error checking status:", error);
     }
   };
-
+  
+  if (token) {
+    checkOnlineStatus();
+  }
+}, [token]);
   // ----------------------
   // REQUEST HANDLERS
   // ----------------------
