@@ -1,29 +1,35 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { 
-  FaCheckCircle, FaTools, FaUsers, FaStar, FaUserPlus, 
-  FaBriefcase, FaHome, FaHandshake, FaClock, FaSearch,
-  FaArrowRight, FaChevronRight, FaShieldAlt, FaBolt,
-  FaQuoteLeft, FaQuestionCircle, FaRegHeart, FaMapMarkerAlt
-} from 'react-icons/fa';
 import { motion } from "framer-motion";
+import { useState } from "react";
+import {
+  FaBriefcase,
+  FaCheckCircle,
+  FaChevronRight,
+  FaClock,
+  FaMapMarkerAlt,
+  FaShieldAlt,
+  FaStar,
+  FaTools,
+  FaUserPlus,
+  FaUsers
+} from 'react-icons/fa';
+import { useNavigate } from "react-router-dom";
 
 // Services images
-import plumber from "../assets/services/plumber.jpeg";
-import electrician from "../assets/services/electrician.jpeg";
-import tutor from "../assets/services/tutor.jpeg";
-import painter from "../assets/services/painter.jpeg";
-import cleaner from "../assets/services/cleaner.jpeg";
 import babysitter from "../assets/services/babysitter.jpeg";
-import sofacarpet from "../assets/services/sofa-carpet.jpeg";
-import decorator from "../assets/services/event-decorators.jpeg";
-import carpenter from "../assets/services/carpenter.jpeg";
-import photographer from "../assets/services/photographer.jpeg";
 import bandbaja from "../assets/services/bandbaja.jpeg";
+import carpenter from "../assets/services/carpenter.jpeg";
 import chef from "../assets/services/chef.jpeg";
-import locksmith from "../assets/services/locksmith.jpeg";
+import cleaner from "../assets/services/cleaner.jpeg";
+import electrician from "../assets/services/electrician.jpeg";
+import decorator from "../assets/services/event-decorators.jpeg";
 import laundry from "../assets/services/laundry.jpeg";
+import locksmith from "../assets/services/locksmith.jpeg";
 import movers from "../assets/services/movers.jpeg";
+import painter from "../assets/services/painter.jpeg";
+import photographer from "../assets/services/photographer.jpeg";
+import plumber from "../assets/services/plumber.jpeg";
+import sofacarpet from "../assets/services/sofa-carpet.jpeg";
+import tutor from "../assets/services/tutor.jpeg";
 import waterproofing from "../assets/services/waterproofing.jpeg";
 
 // Services list
@@ -490,27 +496,27 @@ const Home = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              {
-                name: "Anish Sharma",
-                location: "Delhi",
-                review: "Found an electrician within minutes — super easy and reliable! The platform saved me so much time searching.",
-                rating: 5,
-                service: "Electrician"
-              },
-              {
-                name: "Sujata Patel",
-                location: "Mumbai",
-                review: "Hired a math tutor for my son. The verification process gave me confidence and the tutor was excellent.",
-                rating: 5,
-                service: "Home Tutor"
-              },
-              {
-                name: "Ramesh Kumar",
-                location: "Bangalore",
-                review: "As a provider, I've gotten consistent work through Pro-Connect. The platform is easy to use and reliable.",
-                rating: 5,
-                service: "Plumber"
-              },
+    {
+      name: "Bikram Thapa",
+      location: "Kathmandu",
+      review: "Electrician ko khoj garda Pro-Connect ma 5 min ma bhetiyo. Kaam pani ramro ra price pani reasonable.",
+      rating: 5,
+      service: "Electrician"
+    },
+    {
+      name: "Sita Adhikari",
+      location: "Pokhara",
+      review: "Chhora ko lagi tutor khojeko, verified ra experienced teacher paayau. Aba padhai ma dherai sudhar aako cha.",
+      rating: 5,
+      service: "Home Tutor"
+    },
+    {
+      name: "Ram Chandra Bhatta",
+      location: "Butwal",
+      review: "Plumber ko lagi 2-3 din lagthyo paila. Pro-Connect ma 1 ghanta ma provider aaipugyo. Kaam pani dherai ramro.",
+      rating: 5,
+      service: "Plumber"
+    }
             ].map((testimonial, index) => (
               <motion.div
                 key={index}

@@ -1,8 +1,8 @@
 import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import cusregImage from "../assets/services/cusreg.jpeg";
 import addresData from "../data/addresData.json";
-
 const API_BASE_URL = "http://localhost:5000/api";
 
 // Configure axios
@@ -423,33 +423,57 @@ const CustomerRegistration = () => {
 
   const fileName = (f) => (f ? f.name : "No file chosen");
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-white p-6">
-      <form
-        onSubmit={submitRegistration}
-        className="w-full max-w-5xl rounded-2xl shadow-xl border border-gray-100 overflow-hidden md:flex"
-      >
-        {/* Left panel */}
-        <div className="hidden md:flex md:w-1/2 bg-slate-900 text-white items-center justify-center p-8">
-          <div className="max-w-xs text-center">
-            <h3 className="text-xl font-bold mb-2">Join Pro-Connect</h3>
-            <p className="text-sm text-slate-300">
-              Build your customer profile and explore verified professionals nearby.
-            </p>
-            <p className="mt-6 text-sm text-slate-400">
-              Tip: Keep your information accurate for faster verification.
-            </p>
+ return (
+  <div 
+  className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
+  style={{
+    background: 'linear-gradient(145deg, #f5efe6 50%, #e8e0d5 30%, #dad1c5 60%)'
+  }}
+>
+  {/* Subtle floating circles */}
+  <div className="absolute inset-0 overflow-hidden">
+  
+  </div>
+    <form
+      onSubmit={submitRegistration}
+      className="w-full max-w-5xl rounded-2xl shadow-xl border border-gray-800 overflow-hidden md:flex"
+    >
+      {/* Left panel with image - translucent with overlay text */}
+      <div className="hidden md:flex md:w-1/2 relative items-center justify-center p-0 overflow-hidden">
+        {/* Background image with opacity */}
+        <img 
+          src={cusregImage} 
+          alt="Customer Registration" 
+          className="absolute inset-0 w-full h-full object-cover opacity-40"
+          style={{ maxHeight: '100%', width: '100%' }}
+        />
+        
+        {/* Dark overlay gradient */}
+        <div className="absolute inset-0 bg-linear-to-br from-amber-100/40  to-rose-300/60 mix-blend-multiply"></div>
+        
+        {/* Content overlay */}
+        <div className="relative z-10 text-white text-center p-8 max-w-xs">
+          <h3 className="text-3xl font-bold mb-4">Join as Customer</h3>
+          <div className="w-20 h-1 bg-white mx-auto mb-6"></div>
+          <p className="text-lg mb-4">Create your account</p>
+          <p className="text-sm text-gray-200">
+            Get access to verified professionals and quality services tailored to your needs
+          </p>
           </div>
         </div>
 
-        {/* Right panel */}
-        <div className="w-full md:w-1/2 bg-white p-8">
-          {/* Header */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-slate-900">Customer Registration</h2>
-            <p className="text-sm text-slate-600">Create your account</p>
-          </div>
-
+         {/* Right panel - dark blacky blue purple mixture */}
+     <div className="w-full md:w-1/2 p-8 relative" 
+  style={{
+    background: 'linear-gradient(145deg, #e6f0fa 50%, #d4e6f5 60%, #c2d9f0 100%)'}}
+      >
+        
+        {/* Header with subtle glow */}
+        <div className="mb-6 relative">
+          <h2 className="text-2xl font-bold text-blue-900">Customer Registration</h2>
+          <p className="text-sm text-purple-800">Create your account to get started</p>
+          <div className="w-12 h-0.5 bg-linear-to-r from-purple-500 to-blue-500 mt-2"></div>
+        </div>
           {/* API Error Message */}
           {apiError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
@@ -820,8 +844,8 @@ const CustomerRegistration = () => {
           </div>
         </div>
       </form>
-    </div>
-  );
+   </div>
+);
 };
 
 export default CustomerRegistration;

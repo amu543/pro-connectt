@@ -634,7 +634,32 @@ function detectIDType(text) {
 //  SP Register
 // ---------------------------
 router.post(
-  "/sp-register",
+  "/sp-register",(req,res,next) => {
+     console.log("=== DEBUG: Incoming request ===");
+  console.log("Content-Type:", req.headers['content-type']);
+    // Log the raw request to see what fields are being sent
+  let rawData = '';
+  req.on('data', chunk => {
+    rawData += chunk;
+  });
+  req.on('end', () => {
+    // Extract field names from multipart data
+    const fieldNames = [];
+    const boundary = req.headers['content-type'].split('boundary=')[1];
+    if (boundary && rawData) {
+      const parts = rawData.split(`--${boundary}`);
+      parts.forEach(part => {
+        const nameMatch = part.match(/name="([^"]+)"/);
+        if (nameMatch && nameMatch[1]) {
+          fieldNames.push(nameMatch[1]);
+        }
+      });
+    }
+    console.log("Fields detected in request:", fieldNames);
+    console.log("====================================");
+  });
+  next();
+}, 
   upload.fields([
     { name: "Profile Photo", maxCount: 1 },
     { name: "Upload ID", maxCount: 1 },
@@ -1104,20 +1129,7 @@ router.post("/sp-logout", spAuth, async (req, res) => {
   }
 });
 
-// ---------------------------
-// Get own profile
-// ---------------------------
-router.get("/sp-me", spAuth, async (req, res) => {
-  try {
-    const sp = await ServiceProvider.findById(req.sp.id).select("-password -otp -otpExpires");
-    if (!sp) return res.status(404).json({ error: "sp: User not found" });
-    console.log("sp: Profile fetched for", sp.email);
-    res.json(sp);
-  } catch (err) {
-    console.error("sp: Profile error", err);
-    res.status(500).json({ error: "sp: Server error", details: err.message });
-  }
-});
+
 // Update current GPS location
 // ---------------------------
 router.post("/sp-location", spAuth, async (req, res) => {

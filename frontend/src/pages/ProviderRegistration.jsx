@@ -1,7 +1,7 @@
 import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
+import providerregImage from "../assets/services/providerreg.jpeg";
 import addresData from "../data/addresData.json";
 
 const API_BASE_URL = "http://localhost:5000/api";
@@ -94,7 +94,11 @@ const ProviderRegistration = () => {
 
   const handleInput = (e) => {
     const { name, value } = e.target;
+    if (name === "ID type") {
+    setForm((p) => ({ ...p, idType: value }));
+  } else {
     setForm((p) => ({ ...p, [name]: value }));
+  }
     // Clear field-specific error
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
@@ -103,17 +107,21 @@ const ProviderRegistration = () => {
 
   const handleFile = (e) => {
     const { name, files } = e.target;
-    if (name === "portfolio") {
+    if (name === "Portfolio") {
       setForm((p) => ({ ...p, portfolio: Array.from(files) }));
-    } else if (name === "profilePhoto") {
+    } else if (name === "Profile Photo") {
       // Cleanup previous object URL if exists
       if (form.profilePhoto && typeof form.profilePhoto !== 'string') {
         URL.revokeObjectURL(URL.createObjectURL(form.profilePhoto));
       }
-      setForm((p) => ({ ...p, [name]: files[0] }));
-    } else {
-      setForm((p) => ({ ...p, [name]: files[0] }));
-    }
+      setForm((p) => ({ ...p, profilePhoto: files[0] }));
+    console.log("Profile photo set:", files[0]); 
+    }  else if (name === "Upload ID") {  // ✅ FIXED: Match input name
+    setForm((p) => ({ ...p, idFile: files[0] }));
+  } 
+  else if (name === "Upload CV") {  // ✅ FIXED: Match input name
+    setForm((p) => ({ ...p, cvFile: files[0] }));
+  }
   };
 
   const handleExtraCertChange = (index, file) => {
@@ -257,22 +265,24 @@ const ProviderRegistration = () => {
     
     // Files - Match backend field names
     if (form.profilePhoto) {
-      formData.append("profilePhoto", form.profilePhoto);
+      formData.append("Profile Photo", form.profilePhoto);
     }
     
     if (form.idFile) {
-      formData.append("idFile", form.idFile);
+       formData.append("Upload ID", form.idFile);
     }
     
     if (form.cvFile) {
-      formData.append("cvFile", form.cvFile);
+      formData.append("Upload CV", form.cvFile);
     }
     
-    formData.append("idType", form.idType);
+      formData.append("ID type", form.idType); 
     
     // Portfolio files
-    form.portfolio.forEach((file, index) => {
-      formData.append("Portfolio", file);
+    form.portfolio.forEach((file) => {
+      if (cert.file) {
+      formData.append("Portfolio", cert.file);  // ✅ Correct
+    }
     });
     
     // Extra certificates
@@ -281,7 +291,16 @@ const ProviderRegistration = () => {
         formData.append("Extra Certificate", cert.file);
       }
     });
-    
+     // Debug: Log what we're sending
+  console.log("=== DEBUG: FormData being sent ===");
+  for (let pair of formData.entries()) {
+    if (pair[1] instanceof File) {
+      console.log(`${pair[0]}: [File] ${pair[1].name} (${pair[1].size} bytes)`);
+    } else {
+      console.log(`${pair[0]}: ${pair[1]}`);
+    }
+  }
+  console.log("===================================");
     return formData;
   };
 
@@ -498,45 +517,65 @@ const ProviderRegistration = () => {
 
   const fileName = (f) => (f ? f.name : "No file chosen");
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-white p-6">
-      <form
-        onSubmit={submitRegistration}
-        className="w-full max-w-5xl rounded-2xl shadow-xl border border-gray-100 overflow-hidden md:flex"
-        encType="multipart/form-data"
-      >
-        {/* Left: decorative image panel */}
-        <div className="hidden md:flex md:w-1/2 bg-slate-900 text-white items-center justify-center p-8">
-          <div className="max-w-xs">
-            <div className="w-full h-64 rounded-xl bg-linear-to-br from-slate-800 to-slate-900 flex items-center justify-center overflow-hidden">
-              <div className="text-center px-6">
-                <h3 className="text-xl font-bold mb-2">Become a verified professional</h3>
-                <p className="text-sm text-slate-300">
-                  Build a trusted profile and get matched with customers nearby.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 text-sm text-slate-400">
-              Tip: Keep your portfolio and verification documents ready for a faster approval.
-            </div>
-          </div>
+ return (
+  <div 
+  className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
+  style={{
+    background: 'linear-gradient(145deg, #f5efe6 50%, #e8e0d5 30%, #dad1c5 60%)'
+  }}
+>
+    {/* Subtle floating circles */}
+    <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute top-20 left-1/4 w-96 h-96 bg-amber-200/20 rounded-full blur-3xl animate-float-slow"></div>
+      <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-orange-200/20 rounded-full blur-3xl animate-float-slower"></div>
+      <div className="absolute top-1/3 right-1/3 w-64 h-64 bg-yellow-200/20 rounded-full blur-3xl animate-float"></div>
+      <div className="absolute bottom-1/4 left-1/3 w-72 h-72 bg-rose-200/20 rounded-full blur-3xl animate-float-slow delay-500"></div>
+    </div>
+    
+    <form
+      onSubmit={submitRegistration}
+      className="relative z-10 w-full max-w-5xl rounded-2xl shadow-2xl border border-amber-200/30 overflow-hidden md:flex backdrop-blur-sm"
+      encType="multipart/form-data"
+    >
+      {/* Left panel  */}
+      <div className="hidden md:flex md:w-1/2 relative items-center justify-center p-0 overflow-hidden">
+        <img 
+          src={providerregImage} 
+          alt="Provider Registration" 
+          className="absolute inset-0 w-full h-full object-cover opacity-50 scale-110 hover:scale-105 transition-transform duration-1000"
+          style={{ maxHeight: '100%', width: '100%' }}
+        />
+        
+        {/* Warm cream gradient overlay */}
+        <div className="absolute inset-0 bg-linear-to-br from-amber-100/40  to-rose-300/60 mix-blend-multiply"></div>
+        
+        {/* Content overlay */}
+        <div className="relative z-10 text-white text-center p-8 max-w-xs">
+          <h3 className="text-3xl font-bold mb-4 drop-shadow-lg">Become a Provider</h3>
+          <div className="w-20 h-0.5 bg-linear-to-r from-amber-300 to-rose-300 mx-auto mb-6"></div>
+          <p className="text-lg mb-4 drop-shadow">Create your professional account</p>
+          <p className="text-sm text-amber-100/90 drop-shadow">
+            Build a trusted profile and get matched with customers nearby
+          </p>
         </div>
+      </div>
 
-        {/* Right: form panel */}
-        <div className="w-full md:w-1/2 bg-white p-8">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900">Create your professional account</h2>
-              <p className="text-sm text-slate-600">Build your professional profile</p>
-            </div>
-            {!showVerification && (
-              <div className="text-right">
-                <p className="text-sm text-slate-500">Step</p>
-                <p className="text-lg font-semibold text-slate-900">{step} / 4</p>
-              </div>
-            )}
-          </div>
+         {/* Right panel - light blue gradient */}
+      <div className="w-full md:w-1/2 p-8 relative" 
+        style={{
+          background: 'linear-gradient(145deg, #e6f0fa 0%, #d4e6f5 50%, #c2d9f0 100%)'
+        }}
+      >
+        {/* Soft glow effects */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-200/40 rounded-full blur-3xl -mr-20 -mt-20"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-sky-200/40 rounded-full blur-3xl -ml-20 -mb-20"></div>
+        
+        {/* Header */}
+        <div className="mb-6 relative">
+          <h2 className="text-2xl font-bold text-blue-900">Provider Registration</h2>
+          <p className="text-sm text-purple-800">Create your professional account to get started</p>
+          <div className="w-12 h-0.5 bg-linear-to-r from-purple-500 to-blue-500 mt-2"></div>
+        </div>
 
           {/* API Error Message */}
           {apiError && (
@@ -789,7 +828,7 @@ const ProviderRegistration = () => {
                         <label className="mt-3 w-full flex items-center justify-center">
                           <input
                             type="file"
-                            name="profilePhoto"
+                            name="Profile Photo"
                             accept="image/*"
                             onChange={handleFile}
                             className="hidden"
@@ -1053,7 +1092,7 @@ const ProviderRegistration = () => {
                     <div>
                       <label className="text-sm font-medium text-slate-700">ID Type <span className="text-red-500 ml-1">*</span></label>
                       <select
-                        name="idType"
+                        name="ID type"
                         value={form.idType}
                         onChange={handleInput}
                         className="w-full p-3 rounded-xl border border-gray-200 bg-white text-sm text-slate-800"
@@ -1074,7 +1113,7 @@ const ProviderRegistration = () => {
                       <p className="text-xs text-slate-400 mb-1">Max size: 5 MB (JPG/PNG)</p>
                       <input
                         type="file"
-                        name="idFile"
+                        name="Upload ID"
                         accept=".jpg,.jpeg,.png"
                         onChange={handleFile}
                         className="w-full p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800"
@@ -1090,7 +1129,7 @@ const ProviderRegistration = () => {
                       <p className="text-xs text-slate-400 mb-1">Max: 5 MB (PDF)</p>
                       <input
                         type="file"
-                        name="cvFile"
+                        name="Upload CV"
                         accept=".pdf"
                         onChange={handleFile}
                         className="w-full p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800"
@@ -1106,7 +1145,7 @@ const ProviderRegistration = () => {
                       <p className="text-xs text-slate-400 mb-1">Max: 5 MB each (JPG/PNG/PDF)</p>
                       <input
                         type="file"
-                        name="portfolio"
+                        name="Portfolio"
                         accept=".pdf,.jpg,.png"
                         multiple
                         onChange={handleFile}
@@ -1127,6 +1166,7 @@ const ProviderRegistration = () => {
                         <div key={i} className="flex gap-2 mb-2">
                           <input
                             type="file"
+                           name="Extra Certificate"
                             accept=".pdf,.jpg,.png"
                             onChange={(e) => handleExtraCertChange(i, e.target.files[0])}
                             className="flex-1 p-2 rounded-xl border border-gray-200 bg-white text-sm text-slate-800"

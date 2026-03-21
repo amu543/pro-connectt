@@ -33,7 +33,7 @@ export default function ProviderDashboard() {
   const [profilePic, setProfilePic] = useState(null);
   const [profilePhotoFile, setProfilePhotoFile] = useState(null);
   const [loading, setLoading] = useState(false);
-
+ const [reviews, setReviews] = useState([]);
   // ----------------------
   // API DATA STATES
   // ----------------------
@@ -42,6 +42,35 @@ export default function ProviderDashboard() {
   const [acceptedRequests, setAcceptedRequests] = useState([]);
   const [completedJobs, setCompletedJobs] = useState([]);
   const token = localStorage.getItem("token"); // Auth token
+  // First, check the provider details to get the ID
+fetch('http://localhost:5000/api/sp-service-page/my-details', {
+  headers: { 'Authorization': `Bearer ${token}` }
+})
+.then(r => r.json())
+.then(data => {
+  console.log('Provider data:', data);
+  console.log('Provider ID:', data._id || data.id);
+   const providerId = data._id;
+  if (providerId) {
+    const userData = JSON.parse(localStorage.getItem("userData") || "{}");
+      userData._id = providerId;
+        userData.fullName = data.fullName;
+    userData.email = data.email;
+    userData.phone = data.phone;
+      localStorage.setItem("userData", JSON.stringify(userData));
+      console.log('✅ Saved provider ID to localStorage:', providerId);
+    fetch(`http://localhost:5000/api/customer/rating/average/${providerId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(r => r.json())
+    .then(ratingData => {
+      console.log('Rating data:', ratingData);
+    })
+    .catch(err => console.error('Rating fetch error:', err));
+  }
+})
+.catch(err => console.error('Provider fetch error:', err));
+
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
   const getImageUrl = (photoPath) => {
   if (!photoPath) return null;
@@ -108,14 +137,21 @@ useEffect(() => {
   const fetchData = async () => {
     setLoading(true);
     try {
+       const storedUserData = JSON.parse(localStorage.getItem("userData") || "{}");
+       
+      const providerId = storedUserData._id;
+    console.log("Stored userData:", storedUserData);
       // Fetch profile data from /my-details endpoint
       const profileRes = await api.get("/sp-service-page/my-details");
       const profileData = profileRes.data;
       console.log("Profile data from /my-details:", profileData); 
-      console.log("Profile photo path from server:", profileData.Photo);
-      console.log("ProfilePhoto field:", profileData.profilePhoto);
+      // Try multiple sources to get the provider ID
+
+    
+    
       // Map //
       const mappedProfile = {
+          _id: providerId, // ensure we have the ID for ratings
         name: profileData.fullName || "",
         email: profileData.email || "", 
         phone: profileData.phone || "", 
@@ -143,7 +179,44 @@ useEffect(() => {
       setBio(mappedProfile.bio);
       setSkills(mappedProfile.skills);
       setProfilePic(mappedProfile.profilePhoto);
-
+      if (mappedProfile._id) {
+  console.log("🧪 Testing rating endpoint with ID:", mappedProfile._id);
+  try {
+    const testResponse = await api.get(`/customer/rating/average/${mappedProfile._id}`);
+    console.log("🧪 Rating endpoint test result:", testResponse.data);
+  } catch (error) {
+    console.error("🧪 Rating endpoint test failed:", error.response?.status, error.response?.data);
+  }
+} if (providerId) {
+      try {
+        console.log("Fetching ratings for provider ID:", providerId);
+        const ratingResponse = await api.get(`/customer/rating/average/${providerId}`);
+        console.log("Rating API Response:", ratingResponse.data);
+        
+        if (ratingResponse.data) {
+          const avgRating = parseFloat(ratingResponse.data.avgRating);
+          const totalRatings = ratingResponse.data.totalRatings;
+          
+          if (!isNaN(avgRating)) {
+            setProfile(prev => ({
+              ...prev,
+              rating: avgRating,
+              totalRatings: totalRatings || 0
+            }));
+            console.log("Rating updated successfully to:", avgRating);
+          } else {
+            console.log("No valid rating data found");
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching ratings:", error);
+        if (error.response) {
+          console.error("Error response:", error.response.data);
+        }
+      }
+    } else {
+      console.warn("No provider ID available to fetch ratings");
+    }
       // If email/phone are missing, you might need another endpoint
       if (!mappedProfile.email || !mappedProfile.phone) {
         try {
@@ -173,7 +246,63 @@ useEffect(() => {
 
       // Fetch completed jobs
       const completedRes = await api.get("/service-provider/sp-requests/completed");
-      setCompletedJobs(completedRes.data || []);
+      console.log("COMPLETED JOBS RAW DATA:", completedRes.data);
+      let completedJobsData = completedRes.data || [];
+console.log("Completed jobs fetched:", completedJobsData.length);
+
+// Fetch reviews separately
+if (providerId) {
+  try {
+    const reviewsRes = await api.get(`/customer/rating/reviews/${providerId}`);
+    const reviewsData = reviewsRes.data;
+    console.log("Reviews fetched:", reviewsData);
+    setReviews(reviewsData);
+    
+    // Create a map of review by requestId or customerId
+    const reviewMap = new Map();
+    reviewsData.forEach(review => {
+      // Try to match by requestId if available, otherwise by customer and service
+      if (review.requestId) {
+        reviewMap.set(review.requestId, review);
+      }
+      // Also store by customerId as fallback
+      if (review.customerId) {
+        reviewMap.set(review.customerId, review);
+      }
+    });
+    
+    // Merge reviews with completed jobs
+    completedJobsData = completedJobsData.map(job => {
+      // Try to find matching review
+      let matchingReview = null;
+      
+      // First try by requestId
+      if (job._id && reviewMap.has(job._id)) {
+        matchingReview = reviewMap.get(job._id);
+      }
+      // Then try by customer ID
+      else if (job.customer?._id && reviewMap.has(job.customer._id)) {
+        matchingReview = reviewMap.get(job.customer._id);
+      }
+      
+      if (matchingReview) {
+        console.log(`Found review for job ${job._id}:`, matchingReview);
+        return {
+          ...job,
+          review: matchingReview.review,
+          rating: matchingReview.rating,
+          reviewDate: matchingReview.createdAt
+        };
+      }
+      return job;
+    });
+    
+    console.log("Completed jobs with reviews merged:", completedJobsData);
+  } catch (error) {
+    console.error("Error fetching reviews:", error);
+  }
+}
+      setCompletedJobs(completedJobsData);
 
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -346,29 +475,55 @@ const removeSkill = (skillToRemove) => {
       alert("Failed to deny request: " + (err.response?.data?.error || err.message));
     }
   };
+  useEffect(() => {
+  console.log("📊 PROFILE STATE DEBUG:", {
+    _id: profile._id,
+    name: profile.name,
+    rating: profile.rating,
+    totalRatings: profile.totalRatings,
+    allKeys: Object.keys(profile),
+    fullProfile: profile
+  });
+}, [profile]);
 useEffect(() => {
+  console.log("🔄 Rating fetch useEffect triggered");
+  console.log("📊 Current profile state:", profile);
+  console.log("🔑 profile._id exists?", !!profile._id);
+  console.log("🔑 profile._id value:", profile._id);
 const fetchProviderRatings = async () => {
+  console.log("🔍 Checking profile._id:", profile._id);
    if (profile._id) {
+    console.log("✅ profile._id exists, fetching ratings from:", `/customer/rating/average/${profile._id}`);
   try {
     const response = await api.get(`/customer/rating/average/${profile._id}`);
     console.log("Fetched ratings:", response.data);
     if (response.data) {
-      setProfile(prev => ({
-        ...prev,
-        rating: response.data.avgRating,
-        totalRatings: response.data.totalRatings
-      }));
-      console.log("✅ Updated rating:", response.data.avgRating, "Total reviews:", response.data.totalRatings);
-    }
+      const avgRating = parseFloat(response.data.avgRating);
+          const totalRatings = response.data.totalRatings;
+          
+          console.log("Updating profile with:", { avgRating, totalRatings });
+      if (!isNaN(avgRating)) {
+            setProfile(prev => {
+              console.log(`🔄 Updating rating from ${prev.rating} to ${avgRating}`);
+              return {
+                ...prev,
+                rating: avgRating,
+                totalRatings: totalRatings || 0
+              };
+            });
+          }
+        }
   } catch (error) {
     console.error("Error fetching ratings:", error);
      console.error("Error details:", error.response?.data);
-  }
-};
+  } 
+}else {
+      console.log("⚠️ No profile._id available yet");
+    }
+  };
     fetchProviderRatings();
-  }
 }, [profile._id]);
-
+  
   const handleCompleteJob = async (requestId) => {
     try {
       await api.post(`/service-provider/sp-request-complete/${requestId}`);
@@ -478,7 +633,9 @@ const fetchProviderRatings = async () => {
           <SidebarItem
             icon={<CheckCircle size={20} />}
             label="Completed Jobs"
-            active={activeTab === "completed"}
+            active={activeTab === "completed" && (
+  <CompletedTab completedJobs={completedJobs} reviews={reviews} />
+)}
             onClick={() => setActiveTab("completed")}
             badge={completedJobs.length}
           />
@@ -1089,8 +1246,31 @@ function AcceptedTab({ requests, onComplete, onCall, onOpenMap }) {
 /* --------------------
    COMPLETED TAB
 --------------------- */
-function CompletedTab({ completedJobs }) {
-  if (!completedJobs || completedJobs.length === 0) return (
+function CompletedTab({ completedJobs ,reviews}) {
+  const allItems = [...completedJobs];
+  if (reviews && reviews.length > 0) {
+    reviews.forEach(review => {
+      // Check if this review is already attached to a job
+      const isAttached = completedJobs.some(job => 
+        job.review === review.review && job.rating === review.rating
+      );
+      
+      if (!isAttached) {
+        allItems.push({
+          _id: review._id,
+          customer: { fullName: review.customerName || "Customer" },
+          service: review.service || "Service",
+          completedOn: review.createdAt,
+          review: review.review,
+          rating: review.rating,
+          reviewDate: review.createdAt,
+          isReviewOnly: true
+        });
+      }
+    });
+  }
+  
+  if (allItems.length === 0) return (
     <div className="text-center py-16 bg-white rounded-xl shadow border border-gray-200">
       <CheckCircle size={32} className="text-gray-600 mx-auto mb-4" />
       <h4 className="text-xl font-semibold text-gray-700">No Completed Jobs</h4>
@@ -1100,13 +1280,19 @@ function CompletedTab({ completedJobs }) {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {completedJobs.map((job, index) => (
-        <div key={job._id || index} className="bg-white rounded-xl shadow border border-gray-200 p-6">
+      {allItems.map((job, index) => (
+        <div key={job._id || index} 
+        initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-xl shadow border border-gray-200 p-6 hover:shadow-md transition-shadow">
           <div className="flex justify-between items-start">
             <div>
               <h4 className="text-lg font-bold text-gray-900">
-                {job.customer?.fullName || "Customer"}
+                {job.customer?.fullName || job.customerName ||"Customer"}
               </h4>
+               <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                  Completed
+                </span>
               <span className="inline-block px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium mt-1">
                 {job.service || "Service"}
               </span>
@@ -1114,10 +1300,14 @@ function CompletedTab({ completedJobs }) {
                 <span className="font-medium">Completed on:</span>{" "}
                 {new Date(job.updatedAt || job.createdAt).toLocaleDateString()}
               </p>
-              {job.review && (
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-gray-600 italic">"{job.review}"</p>
-                  <div className="flex items-center gap-1 mt-2">
+              {job.review ? (
+                <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Star size={18} className="text-yellow-500 fill-current" />
+                    <span className="font-semibold text-gray-900">Customer Review</span>
+                  </div>
+                  <p className="text-gray-700 italic">"{job.review}"</p>
+                  <div className="flex items-center gap-1 mt-3">
                     {[...Array(5)].map((_, i) => (
                       <Star 
                         key={i} 
@@ -1125,9 +1315,24 @@ function CompletedTab({ completedJobs }) {
                         className={i < (job.rating || 0) ? "text-yellow-500 fill-current" : "text-gray-300"} 
                       />
                     ))}
-                    <span className="text-sm text-gray-500 ml-2">{job.rating || 0}/5</span>
+                    <span className="text-sm text-gray-600 ml-2 font-medium">
+                      {job.rating || 0}/5
+                    </span>
+                  </div>
+                  {job.reviewDate && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Reviewed on: {new Date(job.reviewDate).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Star size={16} className="text-gray-400" />
+                    <p className="text-gray-500 text-sm">No review provided yet</p>
                   </div>
                 </div>
+                
               )}
             </div>
           </div>

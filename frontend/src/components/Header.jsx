@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
-import { HiX, HiLogout, HiLocationMarker, HiUser } from "react-icons/hi";
 import axios from "axios";
+import { useEffect, useRef, useState } from "react";
+import { HiLocationMarker, HiLogout, HiUser, HiX } from "react-icons/hi";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import Logo from "../assets/logo.png";
 
 
@@ -30,6 +30,7 @@ const Header = () => {
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
   const isLoggedIn = !!token;
   const userName = userData.name || userData.FullName || userData.fullName || "User";
+  const userRole = userData.role || localStorage.getItem("role");
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -156,7 +157,8 @@ const Header = () => {
       const endpoint = role === "customer" 
         ? "/customer/login" 
         : "/service-provider/sp-login";
-      
+       console.log("Login endpoint:", endpoint);
+    console.log("Login data:", { email, role });
       const response = await axios.post(`${API_BASE_URL}${endpoint}`, {
         Email: email,
         Password: password,
@@ -165,20 +167,38 @@ const Header = () => {
       });
 
       if (response.data.token) {
+        const user = response.data.user || response.data;
+        console.log("Login response:", response.data);
+      console.log("User data:", user);
+      let userId = null;
+      
+      if (role === "customer") {
+        // Customer might have _id, id, or customerId
+        userId = user._id || user.id || user.customerId;
+      } else {
+        // Provider might have _id, id, or providerId
+        userId = user._id || user.id || user.providerId;
+      }
+      
+      console.log("Extracted User ID:", userId);
         // Store token and user data
         localStorage.setItem("token", response.data.token);
         localStorage.setItem("role", role);
         
         // Store user data based on response structure
         const userDataToStore = {
-          id: response.data.user?.id || response.data.user?._id,
-          name: response.data.user?.FullName || response.data.user?.fullName || email.split("@")[0],
+           _id: user._id || user.id || userId,
+           id: user._id || user.id || userId,
+          name: user.FullName || user.fullName || email.split("@")[0],
           email: email,
-          role: role
+          role: role,
+           phone: user.phone || "",
+        service: user.service || ""
         };
         
         localStorage.setItem("userData", JSON.stringify(userDataToStore));
-
+         const stored = JSON.parse(localStorage.getItem("userData") || "{}");
+      console.log("Verified stored userData:", stored);
         // Navigate based on role
         const dashboardPath = role === "customer" 
           ? "/customer-dashboard" 

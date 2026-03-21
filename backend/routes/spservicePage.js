@@ -61,6 +61,7 @@ router.get("/my-details", spAuth, async (req, res) => {
     }
   console.log("PROFILE PHOTO PATH FROM DB:", sp.profilePhoto);
     res.json({
+      _id: sp._id,
       fullName: sp.fullName,
       phone: sp.phone,
       email: sp.email,
