@@ -330,26 +330,42 @@ useEffect(() => {
       const completedRes = await api.get("/service-provider/sp-requests/completed");
       console.log("COMPLETED JOBS RAW DATA:", completedRes.data);
       let completedJobsData = completedRes.data || [];
-console.log("Completed jobs fetched:", completedJobsData.length);
-
+      completedJobsData.forEach((job, index) => {
+  if (!job.customer?.fullName && !job.customerName && !job.customer?.name) {
+    console.warn(`⚠️ Job ${index} (ID: ${job._id}) is missing customer name!`);
+    console.log("Full job data:", JSON.stringify(job, null, 2));
+    
+    // Check if customer data exists but is empty
+    if (job.customer) {
+      console.log("Customer object exists but has:", Object.keys(job.customer));
+      console.log("Customer data:", job.customer);
+    }
+  }
+});
 // Fetch reviews separately
 if (providerId) {
   try {
     const reviewsRes = await api.get(`/customer/rating/reviews/${providerId}`);
     const reviewsData = reviewsRes.data;
     console.log("Reviews fetched:", reviewsData);
-    setReviews(reviewsData);
+     // Transform reviews to include customerName from populated data
+    const transformedReviews = reviewsData.map(review => ({
+      ...review,
+      customerName: review.customerId?.fullName || review.customerName || "Customer",
+      customer: review.customerId // Keep the populated customer object
+    }));
     
+    setReviews(transformedReviews);
     // Create a map of review by requestId or customerId
     const reviewMap = new Map();
-    reviewsData.forEach(review => {
-      // Try to match by requestId if available, otherwise by customer and service
+    transformedReviews.forEach(review => {
+      // Try to match by requestId if available
       if (review.requestId) {
         reviewMap.set(review.requestId, review);
       }
       // Also store by customerId as fallback
-      if (review.customerId) {
-        reviewMap.set(review.customerId, review);
+      if (review.customerId?._id || review.customerId) {
+        reviewMap.set(review.customerId?._id || review.customerId, review);
       }
     });
     
@@ -366,6 +382,9 @@ if (providerId) {
       else if (job.customer?._id && reviewMap.has(job.customer._id)) {
         matchingReview = reviewMap.get(job.customer._id);
       }
+       else if (job.customerId && reviewMap.has(job.customerId)) {
+        matchingReview = reviewMap.get(job.customerId);
+      }
       
       if (matchingReview) {
         console.log(`Found review for job ${job._id}:`, matchingReview);
@@ -373,7 +392,8 @@ if (providerId) {
           ...job,
           review: matchingReview.review,
           rating: matchingReview.rating,
-          reviewDate: matchingReview.createdAt
+          reviewDate: matchingReview.createdAt,
+           reviewCustomerName: matchingReview.customerName
         };
       }
       return job;
@@ -444,7 +464,7 @@ const handleSaveProfile = async () => {
       const profileRes = await api.get("/sp-service-page/my-details");
       const profileData = profileRes.data;
        console.log("Updated profile data:", profileData);
-      
+      const newProfilePhoto = profileData.profilePhoto || profileData.profilePhotoUrl || profilePic;
       const updatedProfile = {
         name: profileData.fullName || profile.name,
         email: profileData.email || profile.email,
@@ -463,7 +483,7 @@ const handleSaveProfile = async () => {
           name: skill.name || skill,
           price: skill.price || null
         })) || skills,
-        profilePhoto: profileData.profilePhoto ||profileData.profilePhotoUrl || profilePic
+        profilePhoto: profileData.profilePhoto ||profileData.profilePhotoUrl || profilePic || newProfilePhoto
       };
       
       setProfile(updatedProfile);
@@ -472,6 +492,22 @@ const handleSaveProfile = async () => {
        if (profileData.profilePhoto || profileData.profilePhotoUrl) {
         setProfilePic(profileData.profilePhoto || profileData.profilePhotoUrl);
       }
+      if (newProfilePhoto) {
+        setProfilePic(newProfilePhoto);
+      }
+        const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
+      const updatedUserData = {
+        ...currentUserData,
+        profilePhoto: newProfilePhoto,
+        name: profileData.fullName || profile.name,
+        fullName: profileData.fullName || profile.name,
+        phone: profileData.phone || phone
+      };
+      localStorage.setItem("userData", JSON.stringify(updatedUserData));
+      
+      // Dispatch event to update header
+      window.dispatchEvent(new Event('userDataUpdated'));
+      console.log("✅ Updated localStorage with new profile photo:", newProfilePhoto);
     }
   } catch (err) {
     console.error("Profile update failed:", err);
@@ -515,7 +551,14 @@ const removeSkill = (skillToRemove) => {
       const reader = new FileReader();
       reader.onloadend = (e) => {
         setProfilePic(reader.result);
+      const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
+      const updatedUserData = {
+        ...currentUserData,
+        profilePhoto: reader.result // This is a dataURL preview
       };
+      localStorage.setItem("userData", JSON.stringify(updatedUserData));
+      window.dispatchEvent(new Event('userDataUpdated'));
+    };
       reader.readAsDataURL(file);
     }
   };
@@ -660,8 +703,13 @@ const fetchProviderRatings = async () => {
   const handleCompleteJob = async (requestId) => {
     try {
       await api.post(`/service-provider/sp-request-complete/${requestId}`);
+      console.log("Complete job response:", response.data);
       setAcceptedRequests(prev => prev.filter(r => r.requestId !== requestId));
       alert("Job completed!");
+      const completedRes = await api.get("/service-provider/sp-requests/completed");
+    console.log("Updated completed jobs:", completedRes.data);
+    setCompletedJobs(completedRes.data || []);
+
     } catch (err) {
       console.error("Complete error:", err);
       alert("Failed to complete job: " + (err.response?.data?.error || err.message));
@@ -892,7 +940,7 @@ const fetchProviderRatings = async () => {
         )}
 
         {activeTab === "completed" && (
-          <CompletedTab completedJobs={completedJobs} />
+          <CompletedTab completedJobs={completedJobs} reviews={reviews} />
         )}
       </div>
     </div>
@@ -1442,6 +1490,72 @@ function AcceptedTab({ requests, onComplete, onCall, onOpenMap }) {
 --------------------- */
 function CompletedTab({ completedJobs ,reviews}) {
   const allItems = [...completedJobs];
+   const getCustomerName = (job) => {
+    console.log("Getting customer name for job:", {
+      jobId: job._id,
+      customer: job.customer,
+      customerName: job.customerName,
+      customerFullName: job.customer?.fullName,
+      customerNameField: job.customer?.name,
+      reviewOnly: job.isReviewOnly
+    });
+    // Try different possible paths for the customer name
+  if (job.customer?.fullName && job.customer.fullName !== "Customer") {
+    return job.customer.fullName;
+  }
+  if (job.customer?.name && job.customer.name !== "Customer") {
+    return job.customer.name;
+  }
+  if (job.customerName && job.customerName !== "Customer") {
+    return job.customerName;
+  }
+  if (job.customer?.customerName && job.customer.customerName !== "Customer") {
+    return job.customer.customerName;
+  }
+  if (job.name && job.name !== "Customer") {
+    return job.name;
+  }
+  
+  // If we have a customerId, try to use that
+  if (job.customerId) {
+    return `Customer (ID: ${job.customerId.substring(0, 8)}...)`;
+  }
+  
+  // If we have a service name, show that instead
+  if (job.service) {
+    return `${job.service} Customer`;
+  }
+  
+  if (job._id) {
+    console.warn(`Missing customer name for job ID: ${job._id}. Full job data:`, job);
+    return "Unknown Customer";
+  }
+  
+  // Default
+  return "Customer";
+};
+  const getServiceName = (job) => {
+    if (job.service) return job.service;
+    if (job.serviceName) return job.serviceName;
+    if (job.serviceType) return job.serviceType;
+    if (job.skill) return job.skill;
+    if (job.skills && job.skills.length > 0) {
+      return job.skills[0].name || "Service";
+    }
+    return "Service";
+  };
+  
+  // Helper function to get completion date
+  const getCompletionDate = (job) => {
+    const date = job.completedOn || job.updatedAt || job.createdAt;
+    if (date) {
+      const parsedDate = new Date(date);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate.toLocaleDateString();
+      }
+    }
+    return "Date not available";
+  };
   if (reviews && reviews.length > 0) {
     reviews.forEach(review => {
       // Check if this review is already attached to a job
@@ -1474,64 +1588,75 @@ function CompletedTab({ completedJobs ,reviews}) {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {allItems.map((job, index) => (
-        <div key={job._id || index} 
-        initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-xl shadow border border-gray-200 p-6 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start">
-            <div>
-              <h4 className="text-lg font-bold text-gray-900">
-                {job.customer?.fullName || job.customerName ||"Customer"}
-              </h4>
-               <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                  Completed
-                </span>
-              <span className="inline-block px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium mt-1">
-                {job.service || "Service"}
-              </span>
-              <p className="text-gray-600 mt-2">
-                <span className="font-medium">Completed on:</span>{" "}
-                {new Date(job.updatedAt || job.createdAt).toLocaleDateString()}
-              </p>
-              {job.review ? (
-                <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Star size={18} className="text-yellow-500 fill-current" />
-                    <span className="font-semibold text-gray-900">Customer Review</span>
-                  </div>
-                  <p className="text-gray-700 italic">"{job.review}"</p>
-                  <div className="flex items-center gap-1 mt-3">
-                    {[...Array(5)].map((_, i) => (
-                      <Star 
-                        key={i} 
-                        size={16} 
-                        className={i < (job.rating || 0) ? "text-yellow-500 fill-current" : "text-gray-300"} 
-                      />
-                    ))}
-                    <span className="text-sm text-gray-600 ml-2 font-medium">
-                      {job.rating || 0}/5
+      {allItems.map((job, index) => {
+        const customerName = getCustomerName(job);
+        const isUnknownCustomer = customerName === "Unknown Customer";
+        
+        return (
+          <div 
+            key={job._id || index} 
+            className="bg-white rounded-xl shadow border border-gray-200 p-6 hover:shadow-md transition-shadow"
+          >
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className={`text-lg font-bold ${isUnknownCustomer ? 'text-orange-600' : 'text-gray-900'}`}>
+                  {customerName}
+                  {isUnknownCustomer && (
+                    <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">
+                      Missing Data
                     </span>
-                  </div>
-                  {job.reviewDate && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      Reviewed on: {new Date(job.reviewDate).toLocaleDateString()}
-                    </p>
                   )}
+                </h4>
+                <div className="flex gap-2 mt-1">
+                  <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                    Completed
+                  </span>
+                  <span className="inline-block px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                    {getServiceName(job)}
+                  </span>
                 </div>
-              ) : (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <Star size={16} className="text-gray-400" />
-                    <p className="text-gray-500 text-sm">No review provided yet</p>
+                <p className="text-gray-600 mt-2">
+                  <span className="font-medium">Completed on:</span>{" "}
+                  {getCompletionDate(job)}
+                </p>
+                {job.review ? (
+                  <div className="mt-4 p-6 bg-yellow-50 rounded-lg border border-yellow-200 w-full md:w-[110%] md:-ml-[5%]">
+                    <div className="flex flex-col gap-2">
+                    <p className="text-gray-700 italic">"{job.review}"</p>
+                    <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      {[...Array(5)].map((_, i) => (
+                        <Star 
+                          key={i} 
+                          size={14} 
+                          className={i < (job.rating || 0) ? "text-yellow-500 fill-current" : "text-gray-300"} 
+                        />
+                      ))}
+                      <span className="text-sm text-gray-600 ml-2 font-medium">
+                        {job.rating || 0}/5
+                      </span>
+                    </div>
+                    {job.reviewDate && (
+                      <p className="text-xs text-gray-500">
+                        Reviewed on: {new Date(job.reviewDate).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
                   </div>
                 </div>
-                
-              )}
+                ) : (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <Star size={16} className="text-gray-400" />
+                      <p className="text-gray-500 text-sm">No review provided yet</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

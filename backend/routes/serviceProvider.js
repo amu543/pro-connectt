@@ -1140,6 +1140,7 @@ router.post("/sp-login", async (req, res) => {
         FullName: sp.fullName,
         email: sp.email,
         role: "provider",
+         profilePhoto: sp.profilePhoto, 
         currentLocation: sp.currentLocation
       }
     });

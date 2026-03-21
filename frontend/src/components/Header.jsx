@@ -7,7 +7,37 @@ import Logo from "../assets/logo.png";
 
 // API Configuration
 const API_BASE_URL = "http://localhost:5000/api";
-
+// Helper function to get correct image URL
+const getProfileImageUrl = (photoPath) => {
+  if (!photoPath) return null;
+  
+  // If it's already a full URL or data URL
+  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) {
+    return photoPath;
+  }
+  
+  // Clean up the path
+  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  
+  // If it's just a filename without path, add /uploads/
+  if (!cleanPath.includes('/')) {
+    cleanPath = `/uploads/${cleanPath}`;
+  }
+  
+  // If it doesn't start with /uploads but should
+  if (!cleanPath.startsWith('/uploads') && cleanPath.includes('uploads')) {
+    const uploadsIndex = cleanPath.indexOf('uploads');
+    cleanPath = cleanPath.substring(uploadsIndex - 1);
+  }
+  
+  // Ensure it starts with /
+  if (!cleanPath.startsWith('/')) {
+    cleanPath = '/' + cleanPath;
+  }
+  
+  const fullUrl = `${API_BASE_URL.replace('/api', '')}${cleanPath}`;
+  return fullUrl;
+};
 const Header = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [role, setRole] = useState("customer");
@@ -24,11 +54,44 @@ const Header = () => {
   const locationPath = useLocation();
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
-  
+  const [userData, setUserData] = useState(() => {
+    const stored = localStorage.getItem("userData");
+    return stored ? JSON.parse(stored) : {};
+  });
   // Get user data from localStorage
   const token = localStorage.getItem("token");
-  const userData = JSON.parse(localStorage.getItem("userData") || "{}");
   const isLoggedIn = !!token;
+  useEffect(() => {
+    const updateUserData = () => {
+      const stored = localStorage.getItem("userData");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        console.log("Header updating userData:", parsed);
+        setUserData(parsed);
+      }
+    };
+    
+    // Initial load
+    updateUserData();
+     const handleStorageChange = (e) => {
+      if (e.key === 'userData') {
+        updateUserData();
+      }
+    };
+    
+    // Listen for custom event from dashboard
+    const handleCustomEvent = () => {
+      updateUserData();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('userDataUpdated', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('userDataUpdated', handleCustomEvent);
+    };
+  }, []);
   const userName = userData.name || userData.FullName || userData.fullName || "User";
   const userRole = userData.role || localStorage.getItem("role");
  const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -385,7 +448,19 @@ const handleResendOtp = async () => {
         // Store token and user data
         localStorage.setItem("token", response.data.token);
         localStorage.setItem("role", role);
-        
+         // ✅ FIX: Get profile photo from different possible field names
+      let profilePhoto = null;
+      if (user.profilePhoto) {
+        profilePhoto = user.profilePhoto;
+      } else if (user.profilePicture) {
+        profilePhoto = user.profilePicture;
+      } else if (user.photo) {
+        profilePhoto = user.photo;
+      } else if (user.profilePhotoUrl) {
+        profilePhoto = user.profilePhotoUrl;
+      }
+      
+      console.log("✅ Profile photo found:", profilePhoto);
         // Store user data based on response structure
         const userDataToStore = {
            _id: user._id || user.id || userId,
@@ -394,12 +469,16 @@ const handleResendOtp = async () => {
           email: email,
           role: role,
            phone: user.phone || "",
-        service: user.service || ""
+        service: user.service || "",
+         profilePhoto: profilePhoto  
         };
         
         localStorage.setItem("userData", JSON.stringify(userDataToStore));
+        setUserData(userDataToStore);
          const stored = JSON.parse(localStorage.getItem("userData") || "{}");
       console.log("Verified stored userData:", stored);
+       console.log("Profile photo in storage:", stored.profilePhoto);
+      window.dispatchEvent(new Event('userDataUpdated'));
         // Navigate based on role
         const dashboardPath = role === "customer" 
           ? "/customer-dashboard" 
@@ -456,6 +535,7 @@ const handleResendOtp = async () => {
       // Clear local storage regardless of API response
       localStorage.removeItem("token");
       localStorage.removeItem("userData");
+      setUserData({});
       localStorage.removeItem("role");
       setLocationVerified(false);
       setLocationData({
@@ -565,10 +645,24 @@ const handleResendOtp = async () => {
                         onClick={() => setDropdownOpen(!dropdownOpen)}
                         className="relative group"
                       >
-                        <div className="w-11 h-11 rounded-full bg-linear-to-br from-slate-600 via-slate-700 to-slate-800 flex items-center justify-center transform hover:scale-110 transition-all duration-300 shadow-lg hover:shadow-xl ring-2 ring-slate-300 hover:ring-blue-400 cursor-pointer">
+                        <div className="w-11 h-11 rounded-full bg-linear-to-br from-slate-600 via-slate-700 to-slate-800 flex items-center justify-center transform hover:scale-110 transition-all duration-300 shadow-lg hover:shadow-xl ring-2 ring-slate-300 hover:ring-blue-400 cursor-pointer overflow-hidden">
+                          {userData.profilePhoto ? (
+                            <img
+                              src={getProfileImageUrl(userData.profilePhoto)}
+                              alt={userName}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                console.error("Failed to load profile photo:", e.target.src);
+                                e.target.onerror = null;
+                                e.target.style.display = 'none';
+                                e.target.parentElement.innerHTML = `<span class="text-white font-bold text-lg">${userName.charAt(0).toUpperCase()}</span>`;
+                              }}
+                            />
+                          ) : (
                           <span className="text-white font-bold text-lg">
                             {userName.charAt(0).toUpperCase()}
                           </span>
+                          )}
                         </div>
                         {/* Subtle glow effect on hover */}
                         <div className="absolute inset-0 rounded-full bg-blue-400 blur-md opacity-0 group-hover:opacity-30 transition-opacity duration-300 -z-10"></div>
@@ -580,15 +674,30 @@ const handleResendOtp = async () => {
                           {/* User Info */}
                           <div className="px-5 py-4 border-b border-slate-100 bg-linear-to-br from-slate-50 to-blue-50">
                             <div className="flex items-center space-x-3">
-                              <div className="w-12 h-12 rounded-full bg-linear-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-md">
-                                <span className="text-white font-bold text-xl">
-                                  {userName.charAt(0).toUpperCase()}
-                                </span>
+                              <div className="w-12 h-12 rounded-full bg-linear-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-md overflow-hidden">
+                                {userData.profilePhoto ? (
+                                  <img
+                                    src={getProfileImageUrl(userData.profilePhoto)}
+                                    alt={userName}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      e.target.onerror = null;
+                                      e.target.style.display = 'none';
+                                      e.target.parentElement.innerHTML = `<span class="text-white font-bold text-xl">${userName.charAt(0).toUpperCase()}</span>`;
+                                    }}
+                                  />
+                                ) : (
+                                  <span className="text-white font-bold text-xl">
+                                    {userName.charAt(0).toUpperCase()}
+                                  </span>
+                                )}
                               </div>
                               <div>
                                 <p className="font-bold text-slate-800 text-lg">{userName}</p>
                                 <p className="text-sm text-slate-500 capitalize mt-0.5">
-                                  {userData.role || "User"}
+                                  {userData.role === "provider" ? "Service Provider" : 
+                                   userData.role === "customer" ? "Customer" : 
+                                   userData.role || "User"}
                                 </p>
                               </div>
                             </div>

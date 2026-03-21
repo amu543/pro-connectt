@@ -467,9 +467,21 @@ export default function CustomerDashboard() {
       await customerService.updateProfile(updateData);
       setIsEditing(false);
       alert("Profile updated successfully");
+      const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
+       const updatedUserData = {
+      ...currentUserData,
+      profilePhoto: profilePic,
+      name: profile.fullName || profile.name,
+      fullName: profile.fullName || profile.name,
+      phone: phone
+    };
+    localStorage.setItem("userData", JSON.stringify(updatedUserData));
+    
+    // Dispatch event to update header
+    window.dispatchEvent(new Event('userDataUpdated'));
       const updatedProfile = { ...profile, ...updateData };
-    localStorage.setItem("user", JSON.stringify(updatedProfile));
-       await fetchProfile(); // Refresh profile
+      localStorage.setItem("userData", JSON.stringify(updatedProfile));
+      await fetchProfile(); // Refresh profile
     } catch (err) {
       console.error("Error updating profile:", err);
       alert("Failed to update profile");
@@ -568,6 +580,15 @@ export default function CustomerDashboard() {
           ...prev,
           profilePhoto: reader.result
         }));
+        const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
+      const updatedUserData = {
+        ...currentUserData,
+        profilePhoto: reader.result,
+        name: profile.fullName || profile.name,
+        fullName: profile.fullName || profile.name
+      };
+      localStorage.setItem("userData", JSON.stringify(updatedUserData));
+      window.dispatchEvent(new Event('userDataUpdated'));
       };
       reader.readAsDataURL(file);
     }
@@ -576,6 +597,13 @@ export default function CustomerDashboard() {
   const handleRemovePhoto = () => {
     setProfilePic("");
     setProfile(prev => ({ ...prev, profilePhoto: "" }));
+    const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
+  const updatedUserData = {
+    ...currentUserData,
+    profilePhoto: null
+  };
+  localStorage.setItem("userData", JSON.stringify(updatedUserData));
+  window.dispatchEvent(new Event('userDataUpdated'));
     const updatedProfile = { ...profile, profilePhoto: "" };
   localStorage.setItem("user", JSON.stringify(updatedProfile));
   };

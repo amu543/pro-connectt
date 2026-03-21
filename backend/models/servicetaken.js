@@ -44,6 +44,7 @@ const serviceTakenSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
 // Create 2dsphere index for geospatial queries
 serviceTakenSchema.index({ location: "2dsphere" });
 module.exports = mongoose.model("ServiceTaken", serviceTakenSchema);

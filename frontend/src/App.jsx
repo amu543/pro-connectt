@@ -1,21 +1,20 @@
-import { HashRouter as Router, Routes, Route } from "react-router-dom";
-import { useState, useEffect } from "react";
-import Header from "./components/Header";
+import 'leaflet/dist/leaflet.css';
+import { useEffect, useState } from "react";
+import { Route, HashRouter as Router, Routes } from "react-router-dom";
 import Footer from "./components/Footer";
+import Header from "./components/Header";
 import Loader from "./components/Loader";
 import ProtectedRoute from "./routes/ProtectedRoute";
-
 // Pages
-import Home from "./pages/Home";
 import About from "./pages/About";
-import Faqs from "./pages/Faqs";
-import Legal from "./pages/Legal";
-import CustomerRegistration from "./pages/CustomerRegistration";
-import ProviderRegistration from "./pages/ProviderRegistration";
 import CustomerDashboard from "./pages/CustomerDashboard";
+import CustomerRegistration from "./pages/CustomerRegistration";
+import Faqs from "./pages/Faqs";
+import Home from "./pages/Home";
+import Legal from "./pages/Legal";
 import ProviderDashboard from "./pages/ProviderDashboard";
+import ProviderRegistration from "./pages/ProviderRegistration";
 import ReviewPage from "./pages/Review";
-import ServiceRequestPage from "./pages/ServiceRequestPage";
 
 function App() {
   const [loading, setLoading] = useState(true);

@@ -180,7 +180,7 @@ router.post("/login", async (req, res) => {
     res.json({
       msg: "Customer login successful",
       token,
-      user: { id: user._id, fullName: user.fullName, email: user.email, role: user.role || "customer" }
+      user: { id: user._id, fullName: user.fullName, email: user.email, role: user.role || "customer" ,profilePhoto: user.profilePhoto || null}
     });
   } catch (err) {
     console.error("Login error:", err);
