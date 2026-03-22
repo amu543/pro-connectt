@@ -435,18 +435,26 @@ router.post("/cancel/:requestId", customerAuth, async (req, res) => {
     const request = await ServiceRequest.findById(requestId);
     if (!request) return res.status(404).json({ message: "Request not found" });
 
-    if (request.customer.toString() !== customerId)
-      return res.status(403).json({ message: "Access denied: Not your request" });
+    const requestCustomerId = (request.customer?.toString() || request.customerId?.toString());
+    const authCustomerId = customerId.toString();
 
-    if (!["pending", "in-progress","accepted"].includes(request.status))
-      return res.status(400).json({success: false, message: `Cannot cancel a ${request.status} request` });
+    // ✅ Only ONE ownership check needed
+    if (requestCustomerId !== authCustomerId) {
+      return res.status(403).json({ success: false, message: "Access denied: Not your request" });
+    }
 
-    // ✅ Set status to customer-cancelled
+    const cancellableStatuses = ["pending", "accepted"];
+    if (!cancellableStatuses.includes(request.status)) {
+      return res.status(400).json({ success: false, message: `Cannot cancel a ${request.status} request` });
+    }
+
+    // ✅ Proceed with cancellation — no second ownership check
     request.status = "customer-cancelled";
     request.cancelledAt = new Date();
     request.cancellationReason = req.body.cancellationReason || "Customer cancelled";
     request.cancelledBy = "customer";
     await request.save();
+     console.log("✅ Request cancelled successfully:", requestId);
     // Notify provider via socket if available
     try {
       const provider = await ServiceProvider.findById(request.provider);

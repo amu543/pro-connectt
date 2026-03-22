@@ -576,23 +576,47 @@ const fetchProviderLocation = async (requestId) => {
 
 // Stop tracking
 const stopTrackingProvider = () => {
+   console.log("🛑 Stopping provider tracking...");
   if (locationUpdateInterval) {
     clearInterval(locationUpdateInterval);
     setLocationUpdateInterval(null);
   }
+  if (window._trackingInterval) {
+    clearInterval(window._trackingInterval);
+    window._trackingInterval = null;
+  }
   setIsTrackingActive(false);
   setProviderLocation(null);
    setCurrentTrackingRequestId(null);
+   setLocationError(null);
+   setRouteInfo(null);
+  
+  console.log("✅ Tracking stopped completely");
 };
 const startTrackingProvider = (requestId) => {
-    if (!requestId) return;
-    setIsTrackingActive(true);
-    setCurrentTrackingRequestId(requestId);
-    fetchProviderLocation(requestId);
-    if (locationUpdateInterval) clearInterval(locationUpdateInterval);
-    const interval = setInterval(() => fetchProviderLocation(requestId), 5000);
-    setLocationUpdateInterval(interval);
-  };
+  if (!requestId) return;
+
+  // ✅ Only track if the request is still active in `requests`
+  const isActive = requests.some(r => r._id === requestId && r.status === "accepted");
+  if (!isActive) {
+    console.warn("Skipping tracking — not an active request.");
+    return;
+  }
+
+  setIsTrackingActive(true);
+  setCurrentTrackingRequestId(requestId);
+
+  // Initial fetch
+  fetchProviderLocation(requestId);
+
+  // Clear any old interval first
+  if (locationUpdateInterval) clearInterval(locationUpdateInterval);
+
+  // Poll every 5 seconds
+  const interval = setInterval(() => fetchProviderLocation(requestId), 5000);
+  setLocationUpdateInterval(interval);
+};
+
 // Update the active service when accepted requests change
 useEffect(() => {
     const acceptedRequests = requests.filter(r => r.status === "accepted");
@@ -624,25 +648,45 @@ useEffect(() => {
   }
 }, [selectedService, activeTab]);
   // ── Cancel request (from MY code) ─────────────────────────────
+ 
   const handleCancelRequest = async (requestId, providerName) => {
-    try {
-      const token = localStorage.getItem("token");
-
-      if (!token) { alert("You are not logged in. Please login again."); navigate("/login"); return; }
-      const response = await api.post(`/customer/request/cancel/${requestId}`, { cancellationReason: "Customer cancelled the request" });
-      if (response.data.success) {
-        alert(`Request to ${providerName} has been cancelled successfully.`);
-        fetchRequests();
-        if (selectedService?._id === requestId) { setSelectedService(null); stopTrackingProvider(); }
-      } else {
-        alert("Failed to cancel request. Please try again.");
-      }
-    } catch (err) {
-      console.error("Error cancelling request:", err);
-      const errorMsg = err.response?.data?.msg || err.response?.data?.message || err.response?.data?.error || `Failed to cancel request. (${err.response?.status || 'Network error'})`;
-      alert(errorMsg);
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("You are not logged in. Please login again.");
+      navigate("/login");
+      return;
     }
-  };
+    // Call cancel API
+    const response = await api.post(`/customer/request/cancel/${requestId}`, {
+      cancellationReason: "Customer cancelled the request",
+    });
+    if (response.data.success) {
+      alert(`Request to ${providerName} cancelled successfully.`);
+      // ✅ Stop live tracking for this request
+      if (currentTrackingRequestId === requestId) {
+        stopTrackingProvider();
+      }
+      // ✅ Remove the canceled service from list visually
+      setRequests(prev => prev.filter(r => r._id !== requestId));
+      setActiveService(prev => prev.filter(s => s._id !== requestId));
+      if (selectedService?._id === requestId) {
+        setSelectedService(null);
+      }
+      // ✅ Refresh active requests from backend safely
+      await fetchRequests();
+    } else {
+      alert("Failed to cancel request. Please try again.");
+    }
+  } catch (err) {
+    console.error("Error cancelling request:", err);
+    const errorMsg =
+      err.response?.data?.msg ||
+      err.response?.data?.message ||
+      "Failed to cancel request.";
+    alert(errorMsg);
+  }
+};
   const showCancelConfirmation = (service) => {
     const modalOverlay = document.createElement('div');
     modalOverlay.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
@@ -697,7 +741,21 @@ useEffect(() => {
       setError("Failed to load requests");
     } 
   };
-
+// Clear selected service if it's no longer active
+useEffect(() => {
+  if (selectedService && activeService && activeService.length > 0) {
+    const isStillActive = activeService.some(s => s._id === selectedService._id);
+    if (!isStillActive) {
+      console.log("Selected service no longer active, clearing...");
+      setSelectedService(null);
+      stopTrackingProvider();
+    }
+  } else if (selectedService && (!activeService || activeService.length === 0)) {
+    // If there are no active services, clear selection
+    setSelectedService(null);
+    stopTrackingProvider();
+  }
+}, [activeService, selectedService]);
   // fetchProviders 
   const fetchProviders = async (service) => {
     try {
@@ -968,6 +1026,7 @@ useEffect(() => {
   }, [selectedCategory]);
 
   const handleLogout = async () => {
+    stopTrackingProvider();
     try {
       await customerService.logout();
     } catch (err) {
@@ -1900,7 +1959,7 @@ const renderStars = (rating) => {
                   <p className="text-gray-600 mt-2">Track your provider's location in real-time</p>
                 </div>
 
-                {activeService.length > 0 ? (
+                {activeService && activeService.length > 0 ? (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left: list of active services */}
                     <div className="lg:col-span-1 space-y-4">
