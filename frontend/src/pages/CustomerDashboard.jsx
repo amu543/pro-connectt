@@ -105,6 +105,7 @@ const api = axios.create({
 });
 
 // Add token to requests
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -189,12 +190,6 @@ updateLocation: async (latitude, longitude) => {
           exactService: exactServiceName, // Send exact service name for better matching
          }
       });
-      
-    console.log("✅ Primary route response FULL:", response.data);
-    console.log("Response type:", typeof response.data);
-    console.log("Response keys:", Object.keys(response.data));
-    console.log("Providers array:", response.data.providers);
-    console.log("Providers count:", response.data.providers?.length);
 
       return response.data;
     } catch (err) {
@@ -248,6 +243,8 @@ export default function CustomerDashboard() {
   const [error, setError] = useState("");
   const [initialFetchDone, setInitialFetchDone] = useState(false); 
   const [activeService, setActiveService] = useState(null);
+  const [selectedService, setSelectedService] = useState(null);
+  const [currentTrackingRequestId, setCurrentTrackingRequestId] = useState(null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [locationUpdateInterval, setLocationUpdateInterval] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
@@ -255,7 +252,8 @@ export default function CustomerDashboard() {
   const [customerLocation, setCustomerLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [isTrackingActive, setIsTrackingActive] = useState(false);
-
+   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+    const [routeInfo, setRouteInfo] = useState(null);
   // Add this inside CustomerDashboard component (around line 900)
 const getFullImageUrl = (photoPath) => {
   if (!photoPath) return null;
@@ -276,8 +274,13 @@ const getFullImageUrl = (photoPath) => {
   
   return `http://localhost:5000/uploads/${cleanPath}`;
 };
+const isProviderOnline = (provider) =>
+    provider?.isOnline === true ||
+    provider?.online === true ||
+    provider?.status === 'online' ||
+    provider?.availability === 'online';
   // Routing Control Component
-  const RoutingControl = ({ start, end }) => {
+  const RoutingControl = ({ start, end , onRouteFound}) => {
   const map = useMap();
   
   useEffect(() => {
@@ -288,7 +291,13 @@ const getFullImageUrl = (photoPath) => {
     if (existingControl) {
       existingControl.remove();
     }
-    
+    // Clear existing route lines
+    if (window._customRouteLines) {
+      window._customRouteLines.forEach(line => {
+        if (map && line) map.removeLayer(line);
+      });
+      window._customRouteLines = [];
+    }
     // Create routing control
     const routingControl = L.Routing.control({
       waypoints: [
@@ -311,11 +320,10 @@ const getFullImageUrl = (photoPath) => {
       draggableWaypoints: false,
       show: false,
       collapsible: false,
-      formatter: new L.Routing.Formatter({
-        units: 'metric',
-        unitNames: { meters: 'm', kilometers: 'km' },
-        roundingSensitivity: 1
-      })
+       routeLine: {
+        extendToWaypoints: true,
+        missingRouteTolerance: 0
+      }
     }).addTo(map);
     
     // Customize route line
@@ -348,104 +356,77 @@ const getFullImageUrl = (photoPath) => {
       const time = Math.round(route.summary.totalTime / 60);
       createDirectionsPanel(route, distance, time);
     });
-    
-    // Function to create directions panel
-    const createDirectionsPanel = (route, distance, time) => {
-      const existingPanel = document.querySelector('.directions-panel');
-      if (existingPanel) existingPanel.remove();
-      
-      const panel = document.createElement('div');
-      panel.className = 'directions-panel';
-      panel.innerHTML = `
-        <div class="directions-header">
-          <div class="directions-summary">
-            <div class="summary-item"><span class="summary-icon">📏</span><span class="summary-value">${distance} km</span></div>
-            <div class="summary-item"><span class="summary-icon">⏱️</span><span class="summary-value">${time} min</span></div>
-          </div>
-          <button class="directions-close">✕</button>
-        </div>
-        <div class="directions-list"></div>
-      `;
-      
-      const directionsList = panel.querySelector('.directions-list');
-      if (route.instructions && route.instructions.length > 0) {
-        route.instructions.forEach((instruction, index) => {
-          const instructionDiv = document.createElement('div');
-          instructionDiv.className = 'instruction-item';
-          let distanceText = '';
-          if (instruction.distance) {
-            const dist = instruction.distance;
-            distanceText = dist < 1000 ? `${Math.round(dist)} m` : `${(dist / 1000).toFixed(1)} km`;
-          }
-          instructionDiv.innerHTML = `
-            <div class="instruction-marker">${index + 1}</div>
-            <div class="instruction-content">
-              <div class="instruction-text">${instruction.text || instruction}</div>
-              ${distanceText ? `<div class="instruction-distance">${distanceText}</div>` : ''}
-            </div>
-          `;
-          directionsList.appendChild(instructionDiv);
-        });
+    // Pass route info to parent component
+      if (onRouteFound) {
+        onRouteFound({ distance, time }); 
       }
-      
-      const closeBtn = panel.querySelector('.directions-close');
-      closeBtn.addEventListener('click', () => panel.remove());
-      document.body.appendChild(panel);
-    };
-    
-    // Add CSS for directions panel
-    const style = document.createElement('style');
-    style.textContent = `
-      .directions-panel {
-        position: fixed; top: 88px; right: 20px; width: 320px;
-        max-height: calc(100vh - 120px); background: white; border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.15); z-index: 1000;
-        display: flex; flex-direction: column; overflow: hidden;
-      }
-      .directions-header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid #e5e7eb; }
-      .directions-summary { display: flex; gap: 16px; }
-      .summary-item { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
-      .summary-value { font-weight: 600; color: #2563eb; }
-      .directions-close { background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px 8px; }
-      .directions-list { flex: 1; overflow-y: auto; padding: 12px; max-height: calc(100vh - 180px); }
-      .instruction-item { display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #f3f4f6; }
-      .instruction-marker { width: 24px; height: 24px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
-      .instruction-text { font-size: 13px; color: #374151; }
-      @media (max-width: 768px) {
-        .directions-panel { top: auto; bottom: 0; left: 0; width: 100%; max-height: 50vh; border-radius: 12px 12px 0 0; }
-      }
-    `;
-    document.head.appendChild(style);
-    
-    return () => {
-      if (routingControl) routingControl.remove();
-      if (window._customRouteLines) {
-        window._customRouteLines.forEach(line => map.removeLayer(line));
-        window._customRouteLines = [];
-      }
-      const panel = document.querySelector('.directions-panel');
-      if (panel) panel.remove();
-      if (style.parentNode) style.parentNode.removeChild(style);
-    };
-  }, [map, start, end]);
-  
+       }, [map, start, end, onRouteFound]);
+
   return null;
+};
+// Simple Route Info Display (shows only distance and time)
+const RouteInfoDisplay = ({ distance, time }) => {
+  if (!distance && !time) return null;
+  
+  return (
+    <div className="route-info-panel" style={{
+      position: 'fixed',
+      bottom: '20px',
+      right: '20px',
+      zIndex: 1000,
+      backgroundColor: 'white',
+      borderRadius: '12px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+      padding: '12px 16px',
+      display: 'flex',
+      gap: '16px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      border: '1px solid #e5e7eb'
+    }}>
+      <div className="route-info-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontSize: '20px' }}>📏</span>
+        <div>
+          <div style={{ fontSize: '12px', color: '#6b7280' }}>Distance</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937' }}>{distance} km</div>
+        </div>
+      </div>
+      <div className="route-info-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontSize: '20px' }}>⏱️</span>
+        <div>
+          <div style={{ fontSize: '12px', color: '#6b7280' }}>Est. Time</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937' }}>{time} min</div>
+        </div>
+      </div>
+    </div>
+  );
 };
   // Map Modal Component
 const MapModal = () => {
-  if (!activeService) return null;
+  if (!selectedService) return null;
   
-  const provider = activeService.provider || {};
+  const provider = selectedService.provider || {};
   const customerPos = customerLocation ? [customerLocation.latitude, customerLocation.longitude] : null;
   const providerPos = providerLocation ? [providerLocation.latitude, providerLocation.longitude] : null;
-  
+  // Calculate bounds to fit both markers
+    const getMapBounds = () => {
+      if (customerPos && providerPos) {
+        return {
+          north: Math.max(customerPos[0], providerPos[0]),
+          south: Math.min(customerPos[0], providerPos[0]),
+          east: Math.max(customerPos[1], providerPos[1]),
+          west: Math.min(customerPos[1], providerPos[1])
+        };
+      }
+      return null;
+    };
+    
+    const bounds = getMapBounds();
   return (
     <div className="fixed inset-0 z-50 bg-white" onClick={() => setShowMapModal(false)}>
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-10 bg-white shadow-md p-4 flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-900">
-          {provider.fullName || "Provider"} - Service Tracking
-        </h3>
+          {provider.fullName || "Provider"} - {selectedService.service}</h3>
         <button onClick={() => setShowMapModal(false)} className="p-2 hover:bg-gray-100 rounded-full">
           <X size={24} className="text-gray-600" />
         </button>
@@ -472,17 +453,21 @@ const MapModal = () => {
             center={customerPos}
             zoom={14}
             style={{ height: '100%', width: '100%' }}
+             zoomControl={true}
+              scrollWheelZoom={true}
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             
             {/* Customer Marker */}
-            <Marker position={customerPos}>
-              <Popup>
-                <div className="p-2">
-                  <strong>Your Location</strong><br />
-                  📍 You are here
-                </div>
-              </Popup>
+            <Marker position={customerPos}
+              icon={L.divIcon({
+                  className: 'custom-div-icon',
+                  html: `<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 2px #ef4444;"></div>`,
+                  iconSize: [20, 20],
+                  popupAnchor: [0, -10]
+                })}
+              >
+              <Popup><div className="p-2"><strong>Your Location</strong><br />📍 You are here</div></Popup>
             </Marker>
             
             {/* Provider Marker */}
@@ -492,14 +477,14 @@ const MapModal = () => {
                 icon={L.divIcon({
                   className: 'custom-div-icon',
                   html: `<div style="background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 2px #3b82f6;"></div>`,
-                  iconSize: [16, 16]
+                  iconSize: [16, 16],
+                  popupAnchor: [0, -9]
                 })}
               >
                 <Popup>
                   <div className="p-2">
                     <strong>{provider.fullName || "Provider"}</strong><br />
                     🚗 Moving towards you<br />
-                    <small>ETA: Calculating...</small>
                   </div>
                 </Popup>
               </Marker>
@@ -507,7 +492,8 @@ const MapModal = () => {
             
             {/* Routing Control */}
             {providerPos && customerPos && (
-              <RoutingControl start={customerPos} end={providerPos} />
+              <RoutingControl start={providerLocation}
+                  end={customerLocation} />
             )}
           </MapContainer>
         )}
@@ -531,46 +517,60 @@ const getCustomerLocation = () => {
   }
   
   navigator.geolocation.getCurrentPosition(
-    (position) => {
-      setCustomerLocation({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude
-      });
-    },
-    (error) => {
-      console.error("Geolocation error:", error);
-      setLocationError("Unable to get your location");
-    }
+     (pos) => setCustomerLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      (err) => { console.error("Geolocation error:", err); setLocationError("Unable to get your location"); }
   );
-};
-
-// Start tracking provider location
-const startTrackingProvider = (requestId) => {
-  setIsTrackingActive(true);
-  
-  // Initial fetch
-  fetchProviderLocation(requestId);
-  
-  // Set interval to fetch every 5 seconds
-  const interval = setInterval(() => {
-    fetchProviderLocation(requestId);
-  }, 5000);
-  
-  setLocationUpdateInterval(interval);
 };
 
 // Fetch provider location from backend
 const fetchProviderLocation = async (requestId) => {
+  if (!requestId) return;
+    console.log(`🔄 Fetching provider location for request: ${requestId}`);
+    setIsLoadingLocation(true);
   try {
     const response = await api.get(`/customer/request/${requestId}/provider-location`);
-    if (response.data && response.data.latitude && response.data.longitude) {
+    let lat, lng;
+    if (response.data.location) {
+      lat = response.data.location.latitude;
+      lng = response.data.location.longitude;
+    } else if (response.data.latitude) {
+      lat = response.data.latitude;
+      lng = response.data.longitude;
+    } else {
+      console.warn("⚠️ No location data in response:", response.data);
+      return false;
+    }
+    
+    if (lat && lng) {
+      console.log(`✅ Setting provider location: lat=${lat}, lng=${lng}`);
       setProviderLocation({
-        latitude: response.data.latitude,
-        longitude: response.data.longitude
+        latitude: lat,
+        longitude: lng
       });
+      console.log(`📍 Provider location set: ${lat}, ${lng}`);
+      setLocationError(null);
+      return true;
     }
   } catch (error) {
-    console.error("Error fetching provider location:", error);
+    console.error("❌ Error fetching provider location:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+    
+    // Handle specific error cases
+    if (error.response?.status === 403) {
+      setLocationError("Provider is currently offline");
+    } else if (error.response?.status === 404) {
+      setLocationError("Provider location not available yet");
+    } else if (error.response?.status === 400) {
+      setLocationError("Request not accepted yet");
+    } else {
+      setLocationError("Unable to fetch provider location");
+    }
+    return false;
+  } finally {
+    setIsLoadingLocation(false);
   }
 };
 
@@ -582,41 +582,97 @@ const stopTrackingProvider = () => {
   }
   setIsTrackingActive(false);
   setProviderLocation(null);
+   setCurrentTrackingRequestId(null);
 };
-
+const startTrackingProvider = (requestId) => {
+    if (!requestId) return;
+    setIsTrackingActive(true);
+    setCurrentTrackingRequestId(requestId);
+    fetchProviderLocation(requestId);
+    if (locationUpdateInterval) clearInterval(locationUpdateInterval);
+    const interval = setInterval(() => fetchProviderLocation(requestId), 5000);
+    setLocationUpdateInterval(interval);
+  };
 // Update the active service when accepted requests change
 useEffect(() => {
-  // Find accepted requests (status = "accepted")
-  const acceptedRequestsList = requests.filter(r => r.status === "accepted");
-  
-  if (acceptedRequestsList.length > 0) {
-    // Get the most recent accepted request
-    const latestAccepted = acceptedRequestsList[0];
-    setActiveService(latestAccepted);
-    
-    // Start tracking provider location
-    startTrackingProvider(latestAccepted._id);
-    
-    // Get customer location
+    const acceptedRequests = requests.filter(r => r.status === "accepted");
+    setActiveService(acceptedRequests);
+    if (selectedService) {
+      const stillActive = acceptedRequests.find(r => r._id === selectedService._id);
+      if (!stillActive) { setSelectedService(null); stopTrackingProvider(); }
+      else setSelectedService(stillActive);
+    } else if (acceptedRequests.length > 0) {
+      setSelectedService(acceptedRequests[0]);
+      startTrackingProvider(acceptedRequests[0]._id);
+      getCustomerLocation();
+    }
+    return () => stopTrackingProvider();
+  }, [requests]);
+ const handleSelectService = (service) => {
+    if (selectedService?._id === service._id) return;
+    setSelectedService(service);
+    setShowMapModal(false);
+    if (locationUpdateInterval) clearInterval(locationUpdateInterval);
+    startTrackingProvider(service._id);
     getCustomerLocation();
-  } else {
-    // No active service, stop tracking
-    stopTrackingProvider();
-    setActiveService(null);
-  }
-  
-  // Cleanup on unmount
-  return () => {
-    stopTrackingProvider();
   };
-}, [requests]);
+  useEffect(() => {
+  if (selectedService && activeTab === "map") {
+    console.log("Selected service changed, fetching location...");
+    startTrackingProvider(selectedService._id);
+    getCustomerLocation();
+  }
+}, [selectedService, activeTab]);
+  // ── Cancel request (from MY code) ─────────────────────────────
+  const handleCancelRequest = async (requestId, providerName) => {
+    try {
+      const token = localStorage.getItem("token");
+
+      if (!token) { alert("You are not logged in. Please login again."); navigate("/login"); return; }
+      const response = await api.post(`/customer/request/cancel/${requestId}`, { cancellationReason: "Customer cancelled the request" });
+      if (response.data.success) {
+        alert(`Request to ${providerName} has been cancelled successfully.`);
+        fetchRequests();
+        if (selectedService?._id === requestId) { setSelectedService(null); stopTrackingProvider(); }
+      } else {
+        alert("Failed to cancel request. Please try again.");
+      }
+    } catch (err) {
+      console.error("Error cancelling request:", err);
+      const errorMsg = err.response?.data?.msg || err.response?.data?.message || err.response?.data?.error || `Failed to cancel request. (${err.response?.status || 'Network error'})`;
+      alert(errorMsg);
+    }
+  };
+  const showCancelConfirmation = (service) => {
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
+    const modalContent = document.createElement('div');
+    modalContent.className = 'bg-white rounded-xl max-w-md w-full p-6 shadow-2xl';
+    const currentStatus = service.status || 'accepted';
+    const warningMessages = {
+      pending: "⚠️ The provider hasn't accepted your request yet. Would you like to wait a bit longer or cancel now?",
+      accepted: "⚠️ The provider has accepted your request. Only cancel if absolutely necessary or if provider is unresponsive."
+    };
+    modalContent.innerHTML = `
+      <div class="mb-4"><h3 class="text-xl font-bold text-gray-900 mb-2">Cancel Service Request</h3><p class="text-gray-600">${warningMessages[currentStatus] || "Are you sure you want to cancel?"}</p></div>
+      <div class="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200"><p class="text-sm text-yellow-800"><strong>Service:</strong> ${service.service}<br><strong>Provider:</strong> ${service.provider?.fullName || 'Unknown'}<br><strong>Status:</strong> ${currentStatus === 'accepted' ? '✅ Accepted' : '⏳ Pending'}</p></div>
+      <div class="flex gap-3">
+        <button id="cancel-confirm" class="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Yes, Cancel Request</button>
+        <button id="cancel-close" class="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium">No, Keep Request</button>
+      </div>
+      <div class="mt-4 text-xs text-gray-500 text-center">${currentStatus === 'accepted' ? 'Cancelling will notify the provider immediately.' : 'You can still cancel if you no longer need this service.'}</div>
+    `;
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+    const closeModal = () => modalOverlay.remove();
+    modalContent.querySelector('#cancel-confirm').addEventListener('click', async () => { closeModal(); await handleCancelRequest(service._id, service.provider?.fullName || 'Provider'); });
+    modalContent.querySelector('#cancel-close').addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+  };
 
   // Updated selectedCategory when URL changes
-  useEffect(() => {
-    if (category) {
-      const decodedCategory = decodeURIComponent(category).replace(/-/g, " ");
-      setSelectedCategory(decodedCategory);
-    }
+   useEffect(() => {
+    if (category) setSelectedCategory(decodeURIComponent(category).replace(/-/g, " "));
   }, [category]);
 
   // fetchRequests - matches /customer/request/my-requests/:customerId
@@ -629,26 +685,6 @@ useEffect(() => {
     
     // Get completed requests separately
     const completedData = await customerService.getCompletedRequests(profile._id);
-     // ADD THIS DETAILED LOGGING
-    console.log("===== COMPLETED SERVICES DATA =====");
-    console.log("Raw completed data:", completedData);
-    completedData.forEach((service, index) => {
-      console.log(`Service ${index}:`, {
-        id: service._id,
-        service: service.service,
-        provider: service.provider,
-        providerId: service.provider?._id,
-        providerName: service.provider?.fullName,
-        providerRating: service.provider?.avgRating,
-        providerRatingAlt: service.provider?.rating,
-        providerTotalRatings: service.provider?.totalRatings,
-         providerReviews: service.provider?.reviews?.length,
-        providerPhoto: service.provider?.profilePhoto,
-        hasProviderPhoto: !!service.provider?.profilePhoto,
-        review: service.review
-      });
-    });
-    console.log("===================================");
     setCompletedServices(completedData);
       
       setError("");
@@ -664,9 +700,6 @@ useEffect(() => {
 
   // fetchProviders 
   const fetchProviders = async (service) => {
-    console.log("fetchProviders called with service:", service);
-  console.log("Service type:", typeof service);
-  console.log("Service length:", service?.length);
     try {
       if (!service) {
         setProviders([]);
@@ -759,7 +792,7 @@ useEffect(() => {
         return;
       }
       setLoading(true);
-      const result = await customerService.sendRequest(providerId, selectedCategory);
+       await customerService.sendRequest(providerId, selectedCategory);
       alert(`Request sent to ${providerName}!`);
       fetchRequests(); // Refresh requests
     } catch (err) {
@@ -1128,85 +1161,186 @@ const renderStars = (rating) => {
     );
   };
   const ServiceMapComponent = () => {
-  const position = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : null;
+  useEffect(() => {
+    if (activeTab === "map" && selectedService && !currentLocation) {
+      getCustomerLocation(); // Force fetch customer location
+    }
+  }, [activeTab, selectedService, currentLocation]);
+   const customerPos = customerLocation ? [customerLocation.latitude, customerLocation.longitude] : null;
   const providerPos = providerLocation ? [providerLocation.latitude, providerLocation.longitude] : null;
+   // Validate coordinates
+  const isValidCustomer = customerPos && 
+    !isNaN(customerPos[0]) && 
+    !isNaN(customerPos[1]) &&
+    Math.abs(customerPos[0]) <= 90 &&
+    Math.abs(customerPos[1]) <= 180;
+     const isValidProvider = providerPos && 
+    !isNaN(providerPos[0]) && 
+    !isNaN(providerPos[1]) &&
+    Math.abs(providerPos[0]) <= 90 &&
+    Math.abs(providerPos[1]) <= 180;
+     console.log("Map component - Valid locations:", {
+    hasCustomer: isValidCustomer,
+    hasProvider: isValidProvider,
+    customerLocation,
+    providerLocation
+  });
+  // Debug logging
+  console.log("ServiceMapComponent - Locations:", {
+    customerPos,
+    providerPos,
+    hasCustomer: !!customerPos,
+    hasProvider: !!providerPos,
+    customerLocation,
+    providerLocation
+  });
   
+  // Calculate center point between both locations if both exist
+  const mapCenter = providerPos && customerPos 
+    ? [(customerPos[0] + providerPos[0]) / 2, (customerPos[1] + providerPos[1]) / 2]
+    : (customerPos || [27.7172, 85.3240]);
+
   const ChangeView = ({ center }) => {
     const map = useMap();
-    useEffect(() => {
+    useEffect(() => { 
       if (center) {
-        map.setView(center, 15);
+        map.setView(center, 13);
+      }
+      // Fit bounds to show both markers if both exist
+      if (customerPos && providerPos && map) {
+        const bounds = L.latLngBounds([customerPos, providerPos]);
+        map.fitBounds(bounds, { padding: [50, 50] });
       }
     }, [center, map]);
     return null;
   };
-  
-  if (!position) {
+
+  if (!customerPos) {
     return (
       <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 mx-auto mb-3 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-          <p className="text-gray-500">Waiting for location...</p>
+          <p className="text-gray-500">Waiting for your location...</p>
           <p className="text-gray-400 text-sm mt-2">Please enable location services</p>
+ </div>
+ </div>
+    );
+  }
+
+  if (!providerPos) {
+  return (
+    <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 mx-auto mb-3 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+          <p className="text-gray-600 font-medium">Waiting for provider location...</p>
+          <p className="text-gray-400 text-sm mt-2">Provider is online — their location will appear shortly</p>
         </div>
       </div>
     );
   }
-  
+
   return (
     <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200">
-      <MapContainer
-        center={position}
-        zoom={15}
-        style={{ height: '100%', width: '100%' }}
-        zoomControl={true}
+      <MapContainer 
+        center={mapCenter} 
+        zoom={13} 
+        style={{ height: '100%', width: '100%' }} 
+        zoomControl={true} 
         scrollWheelZoom={true}
+        whenReady={(map) => {
+          // Fit bounds to show both markers
+          const bounds = L.latLngBounds([customerPos, providerPos]);
+          map.target.fitBounds(bounds, { padding: [50, 50] });
+        }}
       >
-        <ChangeView center={position} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        <ChangeView center={mapCenter} />
+        <TileLayer 
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' 
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
         />
-        {/* Customer Marker */}
-        <Marker position={position}>
+
+        {/* Customer Marker (You) - Red */}
+        <Marker 
+          position={customerPos}
+          icon={L.divIcon({
+            className: 'custom-div-icon',
+            html: `<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 2px #ef4444; display: flex; align-items: center; justify-content: center;">
+                    <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
+                  </div>`,
+            iconSize: [20, 20],
+            popupAnchor: [0, -10]
+          })}
+        >
           <Popup>
             <div className="p-2">
               <strong className="text-gray-900">Your Location</strong><br />
-              📍 Service in progress<br />
-              <small className="text-gray-600">
-                You are here
+              📍 You are here<br />
+              <small className="text-gray-500">
+                Lat: {customerPos[0].toFixed(6)}<br />
+                Lng: {customerPos[1].toFixed(6)}
               </small>
             </div>
           </Popup>
         </Marker>
-        
-        {/* Provider Marker - if location available */}
-        {providerPos && (
-          <Marker 
-            position={providerPos}
-            icon={L.divIcon({
-              className: 'custom-div-icon',
-              html: '<div style="background-color: #3b82f6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
-              iconSize: [12, 12],
-              popupAnchor: [0, -6]
-            })}
-          >
-            <Popup>
-              <div className="p-2">
-                <strong className="text-gray-900">Provider Location</strong><br />
-                🚗 {activeService?.provider?.fullName || 'Provider'} is here<br />
-                <small className="text-gray-600">
-                  Moving towards you
-                </small>
-              </div>
-            </Popup>
-          </Marker>
-        )}
+
+        {/* Provider Marker - Blue */}
+        <Marker 
+          position={providerPos}
+          icon={L.divIcon({
+            className: 'custom-div-icon',
+            html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 2px #3b82f6;"></div>`,
+            iconSize: [18, 18],
+            popupAnchor: [0, -9]
+          })}
+      ><Popup>
+            <div className="p-2">
+              <strong className="text-gray-900">{selectedService?.provider?.fullName || 'Provider'}</strong><br />
+              🚗 Provider is here<br />
+              <small className="text-gray-500">
+                Lat: {providerPos[0].toFixed(6)}<br />
+                Lng: {providerPos[1].toFixed(6)}
+              </small>
+            </div>
+          </Popup>
+        </Marker>
+
+        {/* Route from Provider to Customer */}
+        {providerLocation && customerLocation && (
+          <RoutingControl 
+            start={providerLocation}
+            end={customerLocation}
+            onRouteFound={(info) => setRouteInfo(info)}
+
+        />
+         )}
       </MapContainer>
-    </div>
+        {/* Route Info Display - MOVED OUTSIDE MapContainer */}
+      {routeInfo && (
+        <RouteInfoDisplay distance={routeInfo.distance} time={routeInfo.time} />
+      )}
+
+      {/* Status footer inside map */}
+      <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
+        <div className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-lg backdrop-blur-sm flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+          <span>🔵 Provider</span>
+          <div className="w-2 h-2 rounded-full bg-red-400 ml-2"></div>
+          <span>🔴 You</span>
+          {providerLocation && customerLocation && (
+            <span className="ml-2">— Route calculated</span>
+          )}
+        </div>
+         </div>
+      
+      {/* Zoom controls hint */}
+      <div className="absolute bottom-3 right-3 z-10 pointer-events-none">
+        <div className="bg-black/50 text-white text-xs px-2 py-1 rounded-lg backdrop-blur-sm">
+          🖱️ Scroll to zoom • Drag to pan
+        </div>
+      </div>
+  </div>
   );
 };
-
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 text-gray-800">
       {/* Sidebar */}
@@ -1527,8 +1661,6 @@ const renderStars = (rating) => {
                       .map((request) => {
                         const open = expandedIds.includes(request._id);
                         const provider = request.provider || {};
-                         const providerRating = provider.avgRating || provider.rating || 0;
-            const reviewCount = provider.totalRatings || provider.reviews?.length || 0;
                         return (
                           <motion.div
                             key={request._id}
@@ -1762,102 +1894,247 @@ const renderStars = (rating) => {
             
               {/* ACTIVE SERVICE MAP */}
                 {activeTab === "map" && (
-                  <div>
-                    <div className="mb-8">
-                      <h3 className="text-2xl font-bold text-gray-900">Active Service Tracking</h3>
-                      <p className="text-gray-600 mt-2">Track your service provider in real-time</p>
-                    </div>
-                    
-                    {activeService ? (
-                      <div className="space-y-6">
-                        {/* Service Info Card */}
-                        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                              <h4 className="text-xl font-bold text-gray-900">{activeService.service}</h4>
-                              <p className="text-gray-600 mt-1">
-                                Provider: {activeService.provider?.fullName || 'Provider Name'}
-                              </p>
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                  activeService.status === "accepted" ? "bg-green-100 text-green-800" :
-                                  activeService.status === "in-progress" ? "bg-blue-100 text-blue-800" :
-                                  "bg-gray-100 text-gray-800"
-                                }`}>
-                                  {activeService.status?.charAt(0).toUpperCase() + activeService.status?.slice(1)}
-                                </span>
-                                {activeService.provider?.distance && (
-                                  <span className="flex items-center gap-1 text-sm text-gray-500">
-                                    <MapPin size={14} />
-                                    {activeService.provider.distance} away
-                                  </span>
+              <div className="space-y-6">
+                <div className="mb-8">
+                  <h3 className="text-2xl font-bold text-gray-900">Active Service Tracking</h3>
+                  <p className="text-gray-600 mt-2">Track your provider's location in real-time</p>
+                </div>
+
+                {activeService.length > 0 ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Left: list of active services */}
+                    <div className="lg:col-span-1 space-y-4">
+                      <h4 className="text-lg font-semibold text-gray-800 mb-3">Active Services ({activeService.length})</h4>
+                      {activeService.map((service) => {
+                        const isOnline = isProviderOnline(service.provider);
+                        return (
+                          <motion.div key={service._id}
+                            className={`bg-white rounded-xl shadow-md border-2 transition-all cursor-pointer hover:shadow-lg ${selectedService?._id === service._id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}
+                            onClick={() => handleSelectService(service)}>
+                            <div className="p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <h5 className="font-bold text-gray-900">{service.service}</h5>
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                      <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                                      {isOnline ? 'Online' : 'Offline'}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-600">Provider: {service.provider?.fullName || 'Provider Name'}</p>
+                                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                                    <MapPin size={12} />
+                                    <span>{service.provider?.distance || (service.provider?.distanceInKm ? `${service.provider.distanceInKm} km` : 'Distance N/A')}</span>
+                                  </div>
+                                </div>
+                                {selectedService?._id === service._id && <div className="text-blue-500"><CheckCircle size={20} /></div>}
+                              </div>
+                              {/* Three buttons: Call, Cancel, Map */}
+                              <div className="mt-3 flex gap-2">
+                                {service.provider?.phone && (
+                                  <a href={`tel:${service.provider.phone}`} className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm" onClick={(e) => e.stopPropagation()}>
+                                    <FaPhone size={12} />Call
+                                  </a>
                                 )}
+                                <button onClick={(e) => { e.stopPropagation(); showCancelConfirmation(service); }} className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm border border-red-200">
+                                  <X size={12} />Cancel
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isProviderOnline(service.provider)) {
+                                      alert(`${service.provider?.fullName || 'The provider'} is currently offline and unavailable on the map. Please try again when they are online, or contact them directly.`);
+                                      return;
+                                    }
+                                    // Online: select this service to show map on right panel
+                                    handleSelectService(service);
+                                    getCustomerLocation();
+                                  }}
+                                  className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm border ${
+                                    isProviderOnline(service.provider)
+                                      ? 'bg-blue-50 text-blue-600 hover:bg-blue-100 border-blue-200'
+                                      : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <MapPin size={12} />Map
+                                </button>
                               </div>
                             </div>
-                            
-                            <div className="flex gap-3">
-                              {activeService.provider?.phone && (
-                                <a
-                                  href={`tel:${activeService.provider.phone}`}
-                                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-                                >
-                                  <Phone size={16} />
-                                  Call Provider
-                                </a>
-                              )}
-                              {activeService.status === "accepted" && (
-                                <button
-                                  onClick={() => handleCompleteRequest(activeService._id, activeService.provider?.fullName)}
-                                  className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2"
-                                >
-                                  <CheckCircle size={16} />
-                                  Complete Service
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Right: map + details for selected service */}
+                    <div className="lg:col-span-2">
+                      {selectedService ? (
+                        <div className="space-y-4">
+                          {/* Info card with 3 buttons */}
+                          <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-200">
+                            <div className="flex flex-wrap justify-between items-center gap-3">
+                              <div>
+                                <h4 className="text-lg font-bold text-gray-900">Tracking: {selectedService.service}</h4>
+                                <p className="text-sm text-gray-600">Provider: {selectedService.provider?.fullName}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {isProviderOnline(selectedService.provider) ? (
+                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>Online & Active</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>Offline</span>
+                                  )}
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">Status: {selectedService.status === 'accepted' ? 'Accepted' : 'Pending'}</span>
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                {selectedService.provider?.phone && (
+                                  <a href={`tel:${selectedService.provider.phone}`} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
+                                    <FaPhone size={16} />Call
+                                  </a>
+                                )}
+                                <button onClick={() => showCancelConfirmation(selectedService)} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2 border border-red-200">
+                                  <X size={16} />Cancel Request
                                 </button>
-                              )}
+                              </div>
                             </div>
                           </div>
-                        </div>
+
                         
                         {/* Location Status */}
-                        <div className={`p-4 rounded-lg ${locationError ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border`}>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-3 h-3 rounded-full ${isTrackingActive && !locationError ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                            <p className="text-sm font-medium">
-                              {locationError ? locationError : 
-                              isTrackingActive ? "📍 Sharing your location with the provider" : 
-                              "Location sharing is not active"}
-                            </p>
-                          </div>
-                          {currentLocation && !locationError && (
-                            <p className="text-xs text-gray-600 mt-2">
-                              Last update: {new Date().toLocaleTimeString()}
-                            </p>
+                        {isProviderOnline(selectedService.provider) && (
+                            <div className={`p-4 rounded-lg ${locationError ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border`}>
+                              <div className="flex items-center gap-3">
+                                <div className={`w-3 h-3 rounded-full ${isTrackingActive && !locationError ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                                <p className="text-sm font-medium">
+                                  {locationError ? locationError : isTrackingActive ? "📍 Tracking provider location in real-time" : "Waiting for provider location updates"}
+                                </p>
+                              </div>
+                              {providerLocation && !locationError && (
+                                <p className="text-xs text-gray-600 mt-2">Last update: {new Date().toLocaleTimeString()} • Provider is moving towards your location</p>
+                              )}
+                            </div>
                           )}
-                        </div>
                         
-                        {/* Map */}
-                        <ServiceMapComponent />
+                         {/* Map area — conditional on online/offline */}
+                          {isProviderOnline(selectedService.provider) ? (
+                            /* ONLINE: show provider location, route from provider to customer */
+                            (() => {
+                              const provPos = providerLocation
+                                ? [providerLocation.latitude, providerLocation.longitude]
+                                : null;
+                              const custPos = customerLocation
+                                ? [customerLocation.latitude, customerLocation.longitude]
+                                : null;
+                              return (
+                                <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                                  {provPos ? (
+                                    <MapContainer
+                                      key={`${provPos[0]}-${provPos[1]}`}
+                                      center={provPos}
+                                      zoom={14}
+                                      style={{ height: '100%', width: '100%' }}
+                                      zoomControl={true}
+                                      scrollWheelZoom={true}
+                                    >
+                                      <TileLayer
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                      />
+                                      {/* Provider marker — blue dot */}
+                                      <Marker
+                                        position={provPos}
+                                        icon={L.divIcon({
+                                          className: 'custom-div-icon',
+                                          html: `<div style="background-color:#3b82f6;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 0 0 2px #3b82f6;"></div>`,
+                                          iconSize: [16, 16],
+                                          popupAnchor: [0, -8]
+                                        })}
+                                      >
+                                        <Popup>
+                                          <div className="p-2">
+                                            <strong>{selectedService.provider?.fullName || 'Provider'}</strong><br />
+                                            📍 Provider is here
+                                          </div>
+                                        </Popup>
+                                      </Marker>
+                                      {/* Customer marker — default pin */}
+                                      {custPos && (
+                                        <Marker position={custPos}>
+                                          <Popup>
+                                            <div className="p-2">
+                                              <strong>Your Location</strong><br />
+                                              🏠 You are here
+                                            </div>
+                                          </Popup>
+                                        </Marker>
+                                      )}
+                                      {/* Route from provider → customer */}
+                                      {custPos && (
+                                        <RoutingControl
+                                          start={{ latitude: providerLocation.latitude, longitude: providerLocation.longitude }}
+                                          end={{ latitude: customerLocation.latitude, longitude: customerLocation.longitude }}
+                                        />
+                                      )}
+                                    </MapContainer>
+                                  ) : (
+                                    /* Provider online but location not yet received */
+                                    <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center gap-3">
+                                      <div className="w-10 h-10 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+                                      <p className="text-gray-600 font-medium">Waiting for provider location...</p>
+                                      <p className="text-gray-400 text-sm">Provider is online — their location will appear shortly</p>
+                                    </div>
+                                  )}
+                                  {/* Distance badge */}
+                                  {provPos && (
+                                    <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
+                                      <div className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-lg backdrop-blur-sm flex items-center gap-1.5">
+                                        <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                                        {custPos ? "🔵 Provider • 📍 You — route calculated" : "🔵 Provider location"}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            /* OFFLINE: show clear unavailable message */
+                            <div className="w-full h-96 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-4">
+                              <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
+                                <MapPin size={28} className="text-gray-400" />
+                              </div>
+                              <div className="text-center px-6">
+                                <p className="text-gray-700 font-semibold text-lg">Provider is Currently Offline</p>
+                                <p className="text-gray-500 text-sm mt-2">
+                                  <strong>{selectedService.provider?.fullName || 'This provider'}</strong> is not available right now. Their location cannot be tracked until they come back online.
+                                </p>
+                                <p className="text-gray-400 text-xs mt-3">You can still call them or cancel the request using the buttons above.</p>
+                              </div>
+                            </div>
+                          )}
                         
                         {/* Instructions */}
-                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                          <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                            <Compass size={16} />
-                            Service Instructions
-                          </h5>
-                          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-                            <li>Your location is being shared with the service provider for accurate arrival</li>
-                            <li>Provider can see your real-time location while the service is active</li>
-                            <li>You can call the provider using the button above</li>
-                            <li>Click "Complete Service" when the work is finished</li>
-                          </ul>
+                          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-2"><Compass size={16} />Service Instructions</h5>
+                            <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                              <li>Select a service from the left — if provider is online their location appears here</li>
+                              <li>The map shows provider's location with route to your location</li>
+                              <li>If provider is offline, you can still call or cancel</li>
+                            </ul>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <NoActiveServiceMap />
-                    )}
+                      ) : (
+                        <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
+                          <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center"><MapPin size={40} className="text-gray-400" /></div>
+                          <h4 className="text-xl font-semibold text-gray-800 mb-2">Select a Service</h4>
+                          <p className="text-gray-600">Choose a service from the left to start tracking your provider</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  <NoActiveServiceMap setActiveTab={setActiveTab} />
                 )}
-              {showMapModal && <MapModal />}
+              </div>
+            )}
+            {showMapModal && <MapModal />}
 
             {/* BROWSE SERVICES */}
             {activeTab === "services" && (
@@ -2407,7 +2684,7 @@ function InfoField({ label, value, isEditing, onChange, type = "text", disabled 
   );
 }
 
-const NoActiveServiceMap = () => (
+const NoActiveServiceMap = ({ setActiveTab })  => (
   <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
     <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
       <MapPin size={40} className="text-gray-400" />

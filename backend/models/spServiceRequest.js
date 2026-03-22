@@ -18,7 +18,39 @@ const serviceRequestSchema = new mongoose.Schema({
        type: [Number], 
        required: true
       }
-    }
+    },
+     status: {
+      type: String,
+      enum: [
+        "pending",
+        "accepted",
+        "rejected",
+        "completed",
+        "in-progress",
+        "customer-cancelled", 
+      ],
+      default: "pending",
+    },
+ 
+    completedAt: {
+      type: Date,
+    },
+ 
+    completedBy: {
+      type: String, 
+    },
+ 
+    cancelledAt: {
+      type: Date,
+    },
+ 
+    cancellationReason: {
+      type: String,
+    },
+ 
+    cancelledBy: {
+      type: String, 
+    },
   },
   {
   timestamps: true

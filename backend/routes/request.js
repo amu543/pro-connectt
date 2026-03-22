@@ -435,18 +435,34 @@ router.post("/cancel/:requestId", customerAuth, async (req, res) => {
     const request = await ServiceRequest.findById(requestId);
     if (!request) return res.status(404).json({ message: "Request not found" });
 
-    if (request.customer.toString() !== req.user.id.toString())
+    if (request.customer.toString() !== customerId)
       return res.status(403).json({ message: "Access denied: Not your request" });
 
     if (!["pending", "in-progress","accepted"].includes(request.status))
-      return res.status(400).json({ message: `Cannot cancel a ${request.status} request` });
+      return res.status(400).json({success: false, message: `Cannot cancel a ${request.status} request` });
 
     // ✅ Set status to customer-cancelled
     request.status = "customer-cancelled";
     request.cancelledAt = new Date();
+    request.cancellationReason = req.body.cancellationReason || "Customer cancelled";
+    request.cancelledBy = "customer";
     await request.save();
+    // Notify provider via socket if available
+    try {
+      const provider = await ServiceProvider.findById(request.provider);
+      const io = req.app.get("io");
+      if (provider && provider.socketId && io) {
+        io.to(provider.socketId).emit("request-cancelled", {
+          requestId: request._id,
+          message: "Customer has cancelled the service request"
+        });
+      }
+    } catch (socketErr) {
+      console.log("Socket notification error (non-critical):", socketErr.message);
+    }
 
-    res.json({ message: "Request cancelled successfully", requestId: request._id });
+    console.log("✅ Request cancelled successfully:", requestId);
+    res.json({ success: true, message: "Request cancelled successfully", requestId: request._id });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server Error", error: err.message });
