@@ -153,9 +153,21 @@ router.get("/sp-requests/accepted", spAuth, async (req, res) => {
     if (!sp) return res.status(404).json({ error: "Service provider not found" });
 
     const requests = await ServiceRequest.find({ provider: req.user.id, status: "accepted" })
-      .populate("customer", "fullName phone address municipality ward location")
+      .populate("customer", "fullName phone address municipality ward location  currentLocation")
       .sort({ createdAt: -1 });
-const response = requests.map(reqItem => {
+      requests.forEach(reqItem => {
+      const customer = reqItem.customer;
+      if (customer) {
+        console.log(`📋 Customer ${customer._id}:`, {
+          name: customer.fullName,
+          address: customer.address,
+          municipality: customer.municipality,
+          ward: customer.ward,
+          allFields: Object.keys(customer.toObject ? customer.toObject() : customer)
+        });
+      }
+    });
+    const response = requests.map(reqItem => {
       const [lon, lat] = sp.currentLocation.coordinates;
       const [custLon, custLat] = reqItem.location.coordinates || [0, 0];
       return {
@@ -169,11 +181,20 @@ const response = requests.map(reqItem => {
         distanceKm: parseFloat(getDistanceKm(lat, lon, custLat, custLon).toFixed(1)),
         requestedDate: reqItem.createdAt.toISOString().split("T")[0],
         status: reqItem.status,
+        latitude: reqItem.customer?.currentLocation?.coordinates?.[1] || 
+                 reqItem.customer?.location?.coordinates?.[1] || 0,
+        longitude: reqItem.customer?.currentLocation?.coordinates?.[0] || 
+                  reqItem.customer?.location?.coordinates?.[0] || 0,
       };
     });
 
     res.json(response);
-    
+    console.log("✅ Accepted requests response with addresses:", response.map(r => ({
+      name: r.customerName,
+      address: r.address,
+      municipality: r.municipality,
+      ward: r.ward
+    })));
    
   } catch (err) {
     console.error("Error fetching accepted requests", err);
@@ -1203,7 +1224,7 @@ router.post("/sp-location", spAuth, async (req, res) => {
       return res.status(400).json({ error: "longitude and latitude required" });
 
     const user = await ServiceProvider.findByIdAndUpdate(req.user.id, {
-      currentLocation: { type: "Point", coordinates: [longitude, latitude] }
+      currentLocation: { type: "Point", coordinates: [longitude, latitude],lastUpdated: new Date()}
     }, { new: true });
 
     console.log("sp: Location updated", user.currentLocation);
@@ -1534,6 +1555,115 @@ router.post("/sp-resend-otp-password", async (req, res) => {
     
   } catch (error) {
     console.error("Resend OTP error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+// POST /api/service-provider/update-location
+// ---------------------------
+router.post("/update-location", spAuth, async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+    const providerId = req.user.id;
+    
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: "Latitude and longitude are required" });
+    }
+    
+    // Validate coordinates
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      return res.status(400).json({ error: "Invalid coordinates" });
+    }
+    
+    console.log(`📍 Provider ${providerId} updating location:`, { latitude, longitude });
+    
+    // Update provider's current location with timestamp
+    const provider = await ServiceProvider.findByIdAndUpdate(
+      providerId,
+      {
+        $set: {
+          "currentLocation.coordinates": [longitude, latitude],
+          "currentLocation.lastUpdated": new Date()
+        }
+      },
+      { new: true }
+    );
+    
+    if (!provider) {
+      return res.status(404).json({ error: "Provider not found" });
+    }
+    
+    // Find active/accepted requests for this provider
+    const ServiceRequest = require("../models/spServiceRequest");
+    const activeRequests = await ServiceRequest.find({
+      provider: providerId,
+      status: { $in: ["accepted", "in-progress"] }
+    }).populate('customer', 'socketId fullName');
+    
+    // Notify all customers who have active requests with this provider
+    const io = req.app.get("io");
+    
+    activeRequests.forEach(request => {
+      if (request.customer && request.customer.socketId) {
+        io.to(request.customer.socketId).emit("provider-location-update", {
+          requestId: request._id,
+          providerId: providerId,
+          providerName: provider.fullName,
+          location: {
+            latitude,
+            longitude,
+            lastUpdated: new Date()
+          },
+          timestamp: new Date()
+        });
+        console.log(`📡 Sent location update to customer ${request.customer.fullName} (socket: ${request.customer.socketId})`);
+      }
+    });
+    
+    res.json({
+      message: "Location updated successfully",
+      location: {
+        latitude,
+        longitude,
+        lastUpdated: provider.currentLocation.lastUpdated || new Date()
+      },
+      activeCustomersNotified: activeRequests.length
+    });
+    
+  } catch (err) {
+    console.error("❌ Error updating provider location:", err);
+    res.status(500).json({ error: "Server error", details: err.message });
+  }
+});
+
+// ---------------------------
+// Get current provider location
+// GET /api/service-provider/current-location
+// ---------------------------
+router.get("/current-location", spAuth, async (req, res) => {
+  try {
+    const provider = await ServiceProvider.findById(req.user.id).select("currentLocation fullName isOnline");
+    
+    if (!provider) {
+      return res.status(404).json({ error: "Provider not found" });
+    }
+    
+    if (!provider.currentLocation || !provider.currentLocation.coordinates || 
+        (provider.currentLocation.coordinates[0] === 0 && provider.currentLocation.coordinates[1] === 0)) {
+      return res.status(404).json({ error: "Location not available", providerOnline: provider.isOnline });
+    }
+    
+    res.json({
+      location: {
+        latitude: provider.currentLocation.coordinates[1],
+        longitude: provider.currentLocation.coordinates[0],
+        lastUpdated: provider.currentLocation.lastUpdated || new Date()
+      },
+      providerName: provider.fullName,
+      isOnline: provider.isOnline
+    });
+    
+  } catch (err) {
+    console.error("❌ Error fetching provider location:", err);
     res.status(500).json({ error: "Server error" });
   }
 });

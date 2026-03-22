@@ -1,6 +1,8 @@
 import axios from "axios";
 import { motion } from "framer-motion";
 import L from 'leaflet';
+import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import 'leaflet/dist/leaflet.css';
 import {
   Award,
@@ -16,13 +18,13 @@ import {
   Phone,
   Save,
   Star,
-  User
+  User, X
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone } from "react-icons/fa";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate, useParams } from "react-router-dom";
-// Fix for default marker icons in React-Leaflet
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
@@ -70,7 +72,7 @@ const SERVICES = [
   { id: 16, title: "Waterproofing", img: waterproofing },
 ];
 
-  const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "http://localhost:5000/api";
 const SERVICE_NAME_MAPPING = {
   'home-tutors': 'Home Tutors',
   'home tutors': 'Home Tutors',
@@ -130,6 +132,7 @@ const customerService = {
   },
     getCompletedRequests: async (customerId) => {
     const response = await api.get(`/customer/request/completed-requests/${customerId}`);
+     console.log("Completed requests response:", response.data);
     return response.data;
   },
   
@@ -187,7 +190,7 @@ updateLocation: async (latitude, longitude) => {
          }
       });
       
-      console.log("✅ Primary route response FULL:", response.data);
+    console.log("✅ Primary route response FULL:", response.data);
     console.log("Response type:", typeof response.data);
     console.log("Response keys:", Object.keys(response.data));
     console.log("Providers array:", response.data.providers);
@@ -245,12 +248,368 @@ export default function CustomerDashboard() {
   const [error, setError] = useState("");
   const [initialFetchDone, setInitialFetchDone] = useState(false); 
   const [activeService, setActiveService] = useState(null);
-  const [showMap, setShowMap] = useState(false);
+  const [showMapModal, setShowMapModal] = useState(false);
   const [locationUpdateInterval, setLocationUpdateInterval] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [providerLocation, setProviderLocation] = useState(null);
+  const [customerLocation, setCustomerLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [isTrackingActive, setIsTrackingActive] = useState(false);
+
+  // Add this inside CustomerDashboard component (around line 900)
+const getFullImageUrl = (photoPath) => {
+  if (!photoPath) return null;
+  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
+  
+  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  
+  if (cleanPath.startsWith('/uploads')) {
+    return `http://localhost:5000${cleanPath}`;
+  }
+  
+  if (cleanPath.includes('uploads')) {
+    if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+    }
+    return `http://localhost:5000${cleanPath}`;
+  }
+  
+  return `http://localhost:5000/uploads/${cleanPath}`;
+};
+  // Routing Control Component
+  const RoutingControl = ({ start, end }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (!map || !start || !end) return;
+    
+    // Clear existing routing controls
+    const existingControl = document.querySelector('.leaflet-routing-container');
+    if (existingControl) {
+      existingControl.remove();
+    }
+    
+    // Create routing control
+    const routingControl = L.Routing.control({
+      waypoints: [
+        L.latLng(start.latitude, start.longitude),
+        L.latLng(end.latitude, end.longitude)
+      ],
+      routeWhileDragging: false,
+      showAlternatives: false,
+      fitSelectedRoutes: true,
+      lineOptions: {
+        styles: [
+          { color: '#2563eb', weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' },
+          { color: '#3b82f6', weight: 8, opacity: 0.3, lineCap: 'round', lineJoin: 'round' }
+        ],
+        extendToWaypoints: true,
+        missingRouteTolerance: 0
+      },
+      createMarker: function() { return null; },
+      addWaypoints: false,
+      draggableWaypoints: false,
+      show: false,
+      collapsible: false,
+      formatter: new L.Routing.Formatter({
+        units: 'metric',
+        unitNames: { meters: 'm', kilometers: 'km' },
+        roundingSensitivity: 1
+      })
+    }).addTo(map);
+    
+    // Customize route line
+    routingControl.on('routesfound', function(e) {
+      const routes = e.routes;
+      const route = routes[0];
+      
+      // Remove default route line and add custom one
+      const existingLayers = document.querySelectorAll('.leaflet-routing-line');
+      existingLayers.forEach(layer => {
+        if (layer.parentElement) layer.parentElement.remove();
+      });
+      
+      // Add custom polylines
+      const polyline = L.polyline(route.coordinates, {
+        color: '#1e40af', weight: 6, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
+      }).addTo(map);
+      
+      const glowPolyline = L.polyline(route.coordinates, {
+        color: '#60a5fa', weight: 10, opacity: 0.2, lineCap: 'round', lineJoin: 'round'
+      }).addTo(map);
+      
+      if (window._customRouteLines) {
+        window._customRouteLines.forEach(line => map.removeLayer(line));
+      }
+      window._customRouteLines = [glowPolyline, polyline];
+      
+      // Create directions panel
+      const distance = (route.summary.totalDistance / 1000).toFixed(1);
+      const time = Math.round(route.summary.totalTime / 60);
+      createDirectionsPanel(route, distance, time);
+    });
+    
+    // Function to create directions panel
+    const createDirectionsPanel = (route, distance, time) => {
+      const existingPanel = document.querySelector('.directions-panel');
+      if (existingPanel) existingPanel.remove();
+      
+      const panel = document.createElement('div');
+      panel.className = 'directions-panel';
+      panel.innerHTML = `
+        <div class="directions-header">
+          <div class="directions-summary">
+            <div class="summary-item"><span class="summary-icon">📏</span><span class="summary-value">${distance} km</span></div>
+            <div class="summary-item"><span class="summary-icon">⏱️</span><span class="summary-value">${time} min</span></div>
+          </div>
+          <button class="directions-close">✕</button>
+        </div>
+        <div class="directions-list"></div>
+      `;
+      
+      const directionsList = panel.querySelector('.directions-list');
+      if (route.instructions && route.instructions.length > 0) {
+        route.instructions.forEach((instruction, index) => {
+          const instructionDiv = document.createElement('div');
+          instructionDiv.className = 'instruction-item';
+          let distanceText = '';
+          if (instruction.distance) {
+            const dist = instruction.distance;
+            distanceText = dist < 1000 ? `${Math.round(dist)} m` : `${(dist / 1000).toFixed(1)} km`;
+          }
+          instructionDiv.innerHTML = `
+            <div class="instruction-marker">${index + 1}</div>
+            <div class="instruction-content">
+              <div class="instruction-text">${instruction.text || instruction}</div>
+              ${distanceText ? `<div class="instruction-distance">${distanceText}</div>` : ''}
+            </div>
+          `;
+          directionsList.appendChild(instructionDiv);
+        });
+      }
+      
+      const closeBtn = panel.querySelector('.directions-close');
+      closeBtn.addEventListener('click', () => panel.remove());
+      document.body.appendChild(panel);
+    };
+    
+    // Add CSS for directions panel
+    const style = document.createElement('style');
+    style.textContent = `
+      .directions-panel {
+        position: fixed; top: 88px; right: 20px; width: 320px;
+        max-height: calc(100vh - 120px); background: white; border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15); z-index: 1000;
+        display: flex; flex-direction: column; overflow: hidden;
+      }
+      .directions-header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid #e5e7eb; }
+      .directions-summary { display: flex; gap: 16px; }
+      .summary-item { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
+      .summary-value { font-weight: 600; color: #2563eb; }
+      .directions-close { background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+      .directions-list { flex: 1; overflow-y: auto; padding: 12px; max-height: calc(100vh - 180px); }
+      .instruction-item { display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #f3f4f6; }
+      .instruction-marker { width: 24px; height: 24px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+      .instruction-text { font-size: 13px; color: #374151; }
+      @media (max-width: 768px) {
+        .directions-panel { top: auto; bottom: 0; left: 0; width: 100%; max-height: 50vh; border-radius: 12px 12px 0 0; }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      if (routingControl) routingControl.remove();
+      if (window._customRouteLines) {
+        window._customRouteLines.forEach(line => map.removeLayer(line));
+        window._customRouteLines = [];
+      }
+      const panel = document.querySelector('.directions-panel');
+      if (panel) panel.remove();
+      if (style.parentNode) style.parentNode.removeChild(style);
+    };
+  }, [map, start, end]);
+  
+  return null;
+};
+  // Map Modal Component
+const MapModal = () => {
+  if (!activeService) return null;
+  
+  const provider = activeService.provider || {};
+  const customerPos = customerLocation ? [customerLocation.latitude, customerLocation.longitude] : null;
+  const providerPos = providerLocation ? [providerLocation.latitude, providerLocation.longitude] : null;
+  
+  return (
+    <div className="fixed inset-0 z-50 bg-white" onClick={() => setShowMapModal(false)}>
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-white shadow-md p-4 flex justify-between items-center">
+        <h3 className="text-lg font-semibold text-gray-900">
+          {provider.fullName || "Provider"} - Service Tracking
+        </h3>
+        <button onClick={() => setShowMapModal(false)} className="p-2 hover:bg-gray-100 rounded-full">
+          <X size={24} className="text-gray-600" />
+        </button>
+      </div>
+      
+      {/* Status Bar */}
+      <div className="absolute top-16 left-0 right-0 z-10 px-4 py-2 bg-white/95 backdrop-blur-sm shadow-sm flex justify-between items-center border-b">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${isTrackingActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+          <span className="text-sm">
+            {isTrackingActive ? "Live tracking active" : "Waiting for location"}
+          </span>
+        </div>
+        <span className="text-xs text-gray-500">
+          Last update: {new Date().toLocaleTimeString()}
+        </span>
+      </div>
+      
+      {/* Map */}
+      <div className="absolute inset-0 top-[88px]">
+        {customerPos && (
+          <MapContainer
+            key={`${customerPos[0]}-${customerPos[1]}`}
+            center={customerPos}
+            zoom={14}
+            style={{ height: '100%', width: '100%' }}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            
+            {/* Customer Marker */}
+            <Marker position={customerPos}>
+              <Popup>
+                <div className="p-2">
+                  <strong>Your Location</strong><br />
+                  📍 You are here
+                </div>
+              </Popup>
+            </Marker>
+            
+            {/* Provider Marker */}
+            {providerPos && (
+              <Marker 
+                position={providerPos}
+                icon={L.divIcon({
+                  className: 'custom-div-icon',
+                  html: `<div style="background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 2px #3b82f6;"></div>`,
+                  iconSize: [16, 16]
+                })}
+              >
+                <Popup>
+                  <div className="p-2">
+                    <strong>{provider.fullName || "Provider"}</strong><br />
+                    🚗 Moving towards you<br />
+                    <small>ETA: Calculating...</small>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+            
+            {/* Routing Control */}
+            {providerPos && customerPos && (
+              <RoutingControl start={customerPos} end={providerPos} />
+            )}
+          </MapContainer>
+        )}
+      </div>
+      
+      {/* Info Footer */}
+      <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none">
+        <div className="bg-black/75 text-white text-xs p-2 rounded-lg inline-block">
+          {providerPos ? "✅ Route calculated • Provider is on the way" : "📍 Waiting for provider location"}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  // Get customer location
+const getCustomerLocation = () => {
+  if (!navigator.geolocation) {
+    setLocationError("Geolocation is not supported");
+    return;
+  }
+  
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      setCustomerLocation({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      });
+    },
+    (error) => {
+      console.error("Geolocation error:", error);
+      setLocationError("Unable to get your location");
+    }
+  );
+};
+
+// Start tracking provider location
+const startTrackingProvider = (requestId) => {
+  setIsTrackingActive(true);
+  
+  // Initial fetch
+  fetchProviderLocation(requestId);
+  
+  // Set interval to fetch every 5 seconds
+  const interval = setInterval(() => {
+    fetchProviderLocation(requestId);
+  }, 5000);
+  
+  setLocationUpdateInterval(interval);
+};
+
+// Fetch provider location from backend
+const fetchProviderLocation = async (requestId) => {
+  try {
+    const response = await api.get(`/customer/request/${requestId}/provider-location`);
+    if (response.data && response.data.latitude && response.data.longitude) {
+      setProviderLocation({
+        latitude: response.data.latitude,
+        longitude: response.data.longitude
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching provider location:", error);
+  }
+};
+
+// Stop tracking
+const stopTrackingProvider = () => {
+  if (locationUpdateInterval) {
+    clearInterval(locationUpdateInterval);
+    setLocationUpdateInterval(null);
+  }
+  setIsTrackingActive(false);
+  setProviderLocation(null);
+};
+
+// Update the active service when accepted requests change
+useEffect(() => {
+  // Find accepted requests (status = "accepted")
+  const acceptedRequestsList = requests.filter(r => r.status === "accepted");
+  
+  if (acceptedRequestsList.length > 0) {
+    // Get the most recent accepted request
+    const latestAccepted = acceptedRequestsList[0];
+    setActiveService(latestAccepted);
+    
+    // Start tracking provider location
+    startTrackingProvider(latestAccepted._id);
+    
+    // Get customer location
+    getCustomerLocation();
+  } else {
+    // No active service, stop tracking
+    stopTrackingProvider();
+    setActiveService(null);
+  }
+  
+  // Cleanup on unmount
+  return () => {
+    stopTrackingProvider();
+  };
+}, [requests]);
 
   // Updated selectedCategory when URL changes
   useEffect(() => {
@@ -280,8 +639,13 @@ export default function CustomerDashboard() {
         provider: service.provider,
         providerId: service.provider?._id,
         providerName: service.provider?.fullName,
+        providerRating: service.provider?.avgRating,
+        providerRatingAlt: service.provider?.rating,
+        providerTotalRatings: service.provider?.totalRatings,
+         providerReviews: service.provider?.reviews?.length,
         providerPhoto: service.provider?.profilePhoto,
-        hasProviderPhoto: !!service.provider?.profilePhoto
+        hasProviderPhoto: !!service.provider?.profilePhoto,
+        review: service.review
       });
     });
     console.log("===================================");
@@ -298,7 +662,7 @@ export default function CustomerDashboard() {
     } 
   };
 
-  // fetchProviders - uses /customer/request/providers/:service (with fallback)
+  // fetchProviders 
   const fetchProviders = async (service) => {
     console.log("fetchProviders called with service:", service);
   console.log("Service type:", typeof service);
@@ -319,7 +683,57 @@ export default function CustomerDashboard() {
       // Get providers for this service
       const data = await customerService.getProvidersByService(service, profile._id);
       // backend may return { providers: [...] } or an array directly
-      const list = data.providers || data;
+      let list = data.providers || data;
+      if (list && Array.isArray(list) && list.length > 0) {
+      list = [...list].sort((a, b) => {
+        // 1st PRIORITY: Rating (higher rating first)
+        const aRating = a.avgRating || a.rating || 0;
+        const bRating = b.avgRating || b.rating || 0;
+        
+        if (aRating !== bRating) {
+          return bRating - aRating; // Higher rating comes first
+        }
+        
+        // 2nd PRIORITY: Online status (online providers come first)
+        const aOnline = a.isOnline === true;
+        const bOnline = b.isOnline === true;
+        
+        if (aOnline !== bOnline) {
+          return aOnline ? -1 : 1; // Online providers come first
+        }
+        
+        // 3rd PRIORITY: Distance (closest first)
+        let aDistance = Infinity;
+        let bDistance = Infinity;
+        
+        if (a.distanceInKm !== undefined && a.distanceInKm !== null) {
+          aDistance = typeof a.distanceInKm === 'string' ? parseFloat(a.distanceInKm) : a.distanceInKm;
+        }
+        
+        if (b.distanceInKm !== undefined && b.distanceInKm !== null) {
+          bDistance = typeof b.distanceInKm === 'string' ? parseFloat(b.distanceInKm) : b.distanceInKm;
+        }
+        
+        // If both distances are valid numbers, sort by distance
+        if (!isNaN(aDistance) && !isNaN(bDistance)) {
+          return aDistance - bDistance; // Closer distance comes first
+        }
+        
+        // Handle cases where one or both distances are invalid
+        if (isNaN(aDistance) && !isNaN(bDistance)) return 1; // Invalid distances go to bottom
+        if (!isNaN(aDistance) && isNaN(bDistance)) return -1; // Valid distances go to top
+        
+        return 0; // Keep original order if all else equal
+      });
+      
+      console.log("Sorted providers - Rating first, then Online, then Distance:", 
+        list.map(p => ({ 
+          name: p.fullName, 
+          rating: p.avgRating || p.rating || 0,
+          online: p.isOnline, 
+          distance: p.distanceInKm 
+        })));
+    }
       setProviders(list || []);
       setError("");
       
@@ -467,21 +881,9 @@ export default function CustomerDashboard() {
       await customerService.updateProfile(updateData);
       setIsEditing(false);
       alert("Profile updated successfully");
-      const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
-       const updatedUserData = {
-      ...currentUserData,
-      profilePhoto: profilePic,
-      name: profile.fullName || profile.name,
-      fullName: profile.fullName || profile.name,
-      phone: phone
-    };
-    localStorage.setItem("userData", JSON.stringify(updatedUserData));
-    
-    // Dispatch event to update header
-    window.dispatchEvent(new Event('userDataUpdated'));
       const updatedProfile = { ...profile, ...updateData };
-      localStorage.setItem("userData", JSON.stringify(updatedProfile));
-      await fetchProfile(); // Refresh profile
+    localStorage.setItem("user", JSON.stringify(updatedProfile));
+       await fetchProfile(); // Refresh profile
     } catch (err) {
       console.error("Error updating profile:", err);
       alert("Failed to update profile");
@@ -580,15 +982,6 @@ export default function CustomerDashboard() {
           ...prev,
           profilePhoto: reader.result
         }));
-        const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
-      const updatedUserData = {
-        ...currentUserData,
-        profilePhoto: reader.result,
-        name: profile.fullName || profile.name,
-        fullName: profile.fullName || profile.name
-      };
-      localStorage.setItem("userData", JSON.stringify(updatedUserData));
-      window.dispatchEvent(new Event('userDataUpdated'));
       };
       reader.readAsDataURL(file);
     }
@@ -597,13 +990,6 @@ export default function CustomerDashboard() {
   const handleRemovePhoto = () => {
     setProfilePic("");
     setProfile(prev => ({ ...prev, profilePhoto: "" }));
-    const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
-  const updatedUserData = {
-    ...currentUserData,
-    profilePhoto: null
-  };
-  localStorage.setItem("userData", JSON.stringify(updatedUserData));
-  window.dispatchEvent(new Event('userDataUpdated'));
     const updatedProfile = { ...profile, profilePhoto: "" };
   localStorage.setItem("user", JSON.stringify(updatedProfile));
   };
@@ -633,7 +1019,18 @@ const startLocationUpdates = (requestId) => {
   setLocationUpdateInterval(interval);
   setIsTrackingActive(true);
 };
-
+useEffect(() => {
+  console.log("✅ completedServices updated:", completedServices);
+  console.log("Number of completed services:", completedServices.length);
+  completedServices.forEach((service, idx) => {
+    console.log(`Service ${idx}:`, {
+      id: service._id,
+      service: service.service,
+      provider: service.provider?.fullName,
+      providerId: service.provider?._id
+    });
+  });
+}, [completedServices]);
 const sendLocationUpdate = async (requestId) => {
   if (!navigator.geolocation) {
     setLocationError('Geolocation is not supported by your browser');
@@ -652,7 +1049,7 @@ const sendLocationUpdate = async (requestId) => {
         
         // Also update the active service location if needed
         if (requestId) {
-          await api.post(`/api/customer/location/update`, {
+          await api.post(`/customer/location/update`, {
             latitude,
             longitude,
             requestId
@@ -685,50 +1082,10 @@ const stopLocationUpdates = () => {
   setProviderLocation(null);
 };
 
-// Initialize map when map tab is opened
-useEffect(() => {
-  if (activeTab === "map" && activeService) {
-    startLocationUpdates(activeService._id);
-    // Leaflet doesn't need any script loading - it's handled by npm package
-  } else if (activeTab !== "map") {
-    stopLocationUpdates();
-  }
-  
-  return () => {
-    stopLocationUpdates();
-  };
-}, [activeTab, activeService]);
 
-  // Get initials for avatar
-  const getInitials = (name) => {
-    if (!name) return "CU";
-    return name.split(" ").map(n => n[0]).join("").toUpperCase();
-  };
- const getFullImageUrl = (photoPath) => {
-  if (!photoPath) return null;
-  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
-   let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
-  
-  // If it already starts with /uploads, just add base URL
-  if (cleanPath.startsWith('/uploads')) {
-    return `http://localhost:5000${cleanPath}`;
-  }
-  
-  // If it contains 'uploads' but doesn't start with it
-  if (cleanPath.includes('uploads')) {
-    // Make sure it starts with a slash
-    if (!cleanPath.startsWith('/')) {
-      cleanPath = '/' + cleanPath;
-    }
-    return `http://localhost:5000${cleanPath}`;
-  }
-  
-  // If it's just a filename, add /uploads/
-  return `http://localhost:5000/uploads/${cleanPath}`;
-};
   // Process provider data from API - UPDATED for your schema
   const processProvider = (provider, index) => {
- console.log("Processing provider:", provider); // Debug log to see what we're getting
+  console.log("Processing provider:", provider); // Debug log to see what we're getting
   
   const fullName = provider.fullName || provider.name || "Unknown Provider";
   const profilePhoto = provider.profilePhoto ? getFullImageUrl(provider.profilePhoto) : null;
@@ -770,6 +1127,86 @@ const renderStars = (rating) => {
       </div>
     );
   };
+  const ServiceMapComponent = () => {
+  const position = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : null;
+  const providerPos = providerLocation ? [providerLocation.latitude, providerLocation.longitude] : null;
+  
+  const ChangeView = ({ center }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (center) {
+        map.setView(center, 15);
+      }
+    }, [center, map]);
+    return null;
+  };
+  
+  if (!position) {
+    return (
+      <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 mx-auto mb-3 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+          <p className="text-gray-500">Waiting for location...</p>
+          <p className="text-gray-400 text-sm mt-2">Please enable location services</p>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200">
+      <MapContainer
+        center={position}
+        zoom={15}
+        style={{ height: '100%', width: '100%' }}
+        zoomControl={true}
+        scrollWheelZoom={true}
+      >
+        <ChangeView center={position} />
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {/* Customer Marker */}
+        <Marker position={position}>
+          <Popup>
+            <div className="p-2">
+              <strong className="text-gray-900">Your Location</strong><br />
+              📍 Service in progress<br />
+              <small className="text-gray-600">
+                You are here
+              </small>
+            </div>
+          </Popup>
+        </Marker>
+        
+        {/* Provider Marker - if location available */}
+        {providerPos && (
+          <Marker 
+            position={providerPos}
+            icon={L.divIcon({
+              className: 'custom-div-icon',
+              html: '<div style="background-color: #3b82f6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+              iconSize: [12, 12],
+              popupAnchor: [0, -6]
+            })}
+          >
+            <Popup>
+              <div className="p-2">
+                <strong className="text-gray-900">Provider Location</strong><br />
+                🚗 {activeService?.provider?.fullName || 'Provider'} is here<br />
+                <small className="text-gray-600">
+                  Moving towards you
+                </small>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+      </MapContainer>
+    </div>
+  );
+};
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 text-gray-800">
       {/* Sidebar */}
@@ -1038,7 +1475,7 @@ const renderStars = (rating) => {
                             }}
                           />
                           ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">
+                          <div className="w-full h-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center">
                           <span className="text-white text-5xl font-bold">
                           {getInitials(profile.fullName || profile.name)}
                           </span>
@@ -1090,7 +1527,8 @@ const renderStars = (rating) => {
                       .map((request) => {
                         const open = expandedIds.includes(request._id);
                         const provider = request.provider || {};
-                        
+                         const providerRating = provider.avgRating || provider.rating || 0;
+            const reviewCount = provider.totalRatings || provider.reviews?.length || 0;
                         return (
                           <motion.div
                             key={request._id}
@@ -1102,43 +1540,64 @@ const renderStars = (rating) => {
                             <div className="p-5">
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-4 flex-1">
-                                  <div className="relative shrink-0">
-                                    <div className="w-16 h-16 rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
-                                      {getInitials(provider.fullName || provider.name)}
-                                    </div>
-                                    <div className={`absolute bottom-1 right-1 w-3 h-3 rounded-full border-2 border-white ${provider.isOnline ? 'bg-green-500' : 'bg-gray-400'}`} />
-                                  </div>
+                                   <div className="relative shrink-0">
+                        {/* Provider Profile Photo - Now showing actual photo */}
+                        {provider.profilePhoto ? (
+                          <img
+                            src={getFullImageUrl(provider.profilePhoto)}
+                            alt={provider.fullName || provider.name}
+                            className="w-16 h-16 rounded-full object-cover shadow-md"
+                            onError={(e) => {
+                              console.log("Failed to load provider image:", provider.profilePhoto);
+                              e.target.onerror = null;
+                              e.target.style.display = 'none';
+                              const parent = e.target.parentElement;
+                              const fallbackDiv = document.createElement('div');
+                              fallbackDiv.className = "w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold";
+                              fallbackDiv.textContent = getInitials(provider.fullName || provider.name);
+                              parent.appendChild(fallbackDiv);
+                            }}
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
+                            {getInitials(provider.fullName || provider.name)}
+                          </div>
+                        )}
+                        <div className={`absolute bottom-1 right-1 w-3 h-3 rounded-full border-2 border-white ${provider.isOnline ? 'bg-green-500' : 'bg-gray-400'}`} />
+                      </div>
 
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex flex-wrap items-center gap-3 mb-2">
-                                      <h2 className="text-lg font-bold text-gray-900">{provider.fullName || provider.name || "Unknown"}</h2>
-                                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                                        request.status === "pending" ? "bg-yellow-100 text-yellow-800" :
-                                        request.status === "accepted" ? "bg-green-100 text-green-800" :
-                                        "bg-gray-100 text-gray-800"
-                                      }`}>
-                                        {request.status?.charAt(0).toUpperCase() + request.status?.slice(1)}
-                                      </span>
-                                      <div className="flex items-center gap-1">
-                                        <Star size={12} className="text-yellow-500 fill-current" />
-                                        <span className="font-semibold text-sm">0</span>
-                                        <span className="text-gray-500 text-xs">(0 services)</span>
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
-                                      <span className="flex items-center gap-1">
-                                        <MapPin size={12} />
-                                       {provider.distance ? provider.distance : 
-                                        provider.distanceInKm ? `${provider.distanceInKm} km` : 
-                                          provider.currentLocation ? "Location available" : 
-                                                "N/A"}
-                                      </span>
-                                      <span className="flex items-center gap-1">
-                                        <Award size={12} />
-                                        {provider.yearsOfExperience || "N/A"}
-                                      </span>
-                                    </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-3 mb-2">
+                          <h2 className="text-lg font-bold text-gray-900">
+                            {provider.fullName || provider.name || "Unknown"}
+                          </h2>
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                            request.status === "pending" ? "bg-yellow-100 text-yellow-800" :
+                            request.status === "accepted" ? "bg-green-100 text-green-800" :
+                            "bg-gray-100 text-gray-800"
+                          }`}>
+                            {request.status?.charAt(0).toUpperCase() + request.status?.slice(1)}
+                          </span>
+                          </div>
+                        
+                        
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
+                          <span className="flex items-center gap-1">
+                            <MapPin size={12} />
+                            {provider.distance ? provider.distance : 
+                             provider.distanceInKm ? `${parseFloat(provider.distanceInKm).toFixed(1)} km` : 
+                             provider.currentLocation ? "Location available" : "N/A"}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Award size={12} />
+                            {provider.yearsOfExperience || "N/A"} years
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <CheckCircle size={12} />
+                            {provider.servicesDone || provider.totalServices || 0} services
+                          </span>
+                        </div>
+                        
                                     
                                     <p className="text-gray-600 text-sm mb-3 line-clamp-2">{provider.shortBio || "No bio available"}</p>
                                     
@@ -1398,7 +1857,7 @@ const renderStars = (rating) => {
                     )}
                   </div>
                 )}
-
+              {showMapModal && <MapModal />}
 
             {/* BROWSE SERVICES */}
             {activeTab === "services" && (
@@ -1518,7 +1977,7 @@ const renderStars = (rating) => {
                                                 }}
                                               />
                                           ) : (
-                                            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center text-white text-2xl font-bold shadow-xl">
+                                            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-linear-to-br from-gray-900 to-gray-700 flex items-center justify-center text-white text-2xl font-bold shadow-xl">
                                             {getInitials(processedProvider.name)}
                                           </div>
                                           )}
@@ -1768,7 +2227,8 @@ function ServiceReviewCard({ service, getFullImageUrl, getInitials }) {
     provider: provider,
     service: service.service,
     hasProvider: !!service.provider,
-    hasReview:!!review
+    hasReview:!!review,
+    reviewData: review
   });
    const getImageUrl = (photoPath) => {
     console.log("getImageUrl called with:", photoPath);
@@ -1824,7 +2284,7 @@ function ServiceReviewCard({ service, getFullImageUrl, getInitials }) {
                   }}
                 />
               ) : (
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
+                <div className="w-16 h-16 rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-lg font-bold">
 
                 {getInitials(provider.fullName || provider.name)}
               </div>
@@ -1946,88 +2406,7 @@ function InfoField({ label, value, isEditing, onChange, type = "text", disabled 
     </div>
   );
 }
-// Map Component for Active Service - Leaflet Version
-const ServiceMapComponent = () => {
-  const position = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : null;
-  const providerPos = providerLocation ? [providerLocation.latitude, providerLocation.longitude] : null;
-  
-  const ChangeView = ({ center }) => {
-    const map = useMap();
-    useEffect(() => {
-      if (center) {
-        map.setView(center, 15);
-      }
-    }, [center, map]);
-    return null;
-  };
-  
-  if (!position) {
-    return (
-      <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 mx-auto mb-3 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-          <p className="text-gray-500">Waiting for location...</p>
-          <p className="text-gray-400 text-sm mt-2">Please enable location services</p>
-        </div>
-      </div>
-    );
-  }
-  
-  return (
-    <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg border border-gray-200">
-      <MapContainer
-        center={position}
-        zoom={15}
-        style={{ height: '100%', width: '100%' }}
-        zoomControl={true}
-        scrollWheelZoom={true}
-      >
-        <ChangeView center={position} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        {/* Customer Marker */}
-        <Marker position={position}>
-          <Popup>
-            <div className="p-2">
-              <strong className="text-gray-900">Your Location</strong><br />
-              📍 Service in progress<br />
-              <small className="text-gray-600">
-                You are here
-              </small>
-            </div>
-          </Popup>
-        </Marker>
-        
-        {/* Provider Marker - if location available */}
-        {providerPos && (
-          <Marker 
-            position={providerPos}
-            icon={L.divIcon({
-              className: 'custom-div-icon',
-              html: '<div style="background-color: #3b82f6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
-              iconSize: [12, 12],
-              popupAnchor: [0, -6]
-            })}
-          >
-            <Popup>
-              <div className="p-2">
-                <strong className="text-gray-900">Provider Location</strong><br />
-                🚗 {activeService?.provider?.fullName || 'Provider'} is here<br />
-                <small className="text-gray-600">
-                  Moving towards you
-                </small>
-              </div>
-            </Popup>
-          </Marker>
-        )}
-      </MapContainer>
-    </div>
-  );
-};
 
-// Inside CustomerDashboard component, before return:
 const NoActiveServiceMap = () => (
   <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
     <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">

@@ -54,7 +54,8 @@ const ServiceProviderSchema = new mongoose.Schema({
   },
   currentLocation: {
     type: { type: String, enum: ["Point"], default: "Point" },
-    coordinates: { type: [Number], default: [0, 0] }
+    coordinates: { type: [Number], default: [0, 0] },
+     lastUpdated: { type: Date, default: Date.now}
   },
   otp: { type: String },
   otpExpires: { type: Date },

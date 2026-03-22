@@ -8,6 +8,7 @@ const customerAuth = require("../middleware/customerAuth");
 const Rating = require("../models/rating");
 const rating = require("../models/rating");
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+const SPServiceRequest = require("../models/spServiceRequest");
 /* ============================
    GET PROVIDERS BY SERVICE
 ============================ */
@@ -268,7 +269,7 @@ router.get("/my-requests/:customerId", async (req, res) => {
     const requests = await ServiceRequest.find({
       customer: req.params.customerId,
       status: { $in: ["pending", "accepted"] }
-    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio ");
+    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio  distanceInKm isOnline avgRating totalRatings reviews");
 
  // Calculate distance for each request based on provider's location
     const requestsWithDistance = requests.map(request => {
@@ -746,6 +747,169 @@ router.get("/provider/accepted-requests", async (req, res) => {
   }
 });
 
+router.get('/:requestId/provider-location', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    
+    // Find the request and get the provider
+    const request =await SPServiceRequest.findById(requestId)
+      .populate('provider', 'fullName email phone currentLocation location lastLocation isOnline');
+    
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    
+    const provider = request.provider;
+     if (!provider) {
+      return res.status(404).json({ error: 'Provider not found for this request' });
+    }
+    
+    // Check if request is accepted or in-progress
+    if (request.status !== "accepted" && request.status !== "in-progress") {
+      console.log("⚠️ Request status is not accepted:", request.status);
+      return res.status(400).json({ 
+        msg: `Provider location only available for accepted or in-progress requests. Current status: ${request.status}` 
+      });
+    }
+    
+    if (!request.provider) {
+      console.log("❌ Provider not found for request");
+      return res.status(404).json({ error: 'Provider not found for this request' });
+    }
+    // Check currentLocation field
+    if (provider.currentLocation && 
+        provider.currentLocation.coordinates && 
+        provider.currentLocation.coordinates.length === 2 &&
+        !(provider.currentLocation.coordinates[0] === 0 && provider.currentLocation.coordinates[1] === 0)) {
+      location = provider.currentLocation;
+      locationSource = "currentLocation";
+      console.log("📍 Found provider location in currentLocation");
+    }
+    
+    if (!location) {
+      console.log("❌ No provider location found");
+      return res.status(404).json({ 
+        msg: "Provider location not available. Provider needs to enable location services.",
+        providerOnline: provider.isOnline || false
+      });
+    }
+    
+    const response = {
+      msg: "Provider location retrieved",
+      locationSource: locationSource,
+      provider: {
+        id: provider._id,
+        fullName: provider.fullName,
+        email: provider.email,
+        phone: provider.phone,
+        isOnline: provider.isOnline
+      },
+      location: {
+        type: location.type,
+        coordinates: location.coordinates, // [longitude, latitude]
+        latitude: location.coordinates[1],
+        longitude: location.coordinates[0],
+        lastUpdated: location.lastUpdated || new Date()
+      },
+      request: {
+        id: request._id,
+        service: request.service,
+        status: request.status,
+        createdAt: request.createdAt
+      }
+    };
+    
+    console.log("✅ Provider location found:", {
+      lat: response.location.latitude,
+      lng: response.location.longitude,
+      provider: response.provider.fullName
+    });
+    
+    res.json(response);
+    
+  } catch (err) {
+    console.error("❌ Error fetching provider location:", err);
+    res.status(500).json({ 
+      msg: "Server error", 
+      error: err.message 
+    });
+  }
+});
 
+/**
+ * 11. POST /api/request/:requestId/update-provider-location
+ * Update provider's location for an active request
+ */
+router.post("/:requestId/update-provider-location", async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { latitude, longitude } = req.body;
+    
+    if (!latitude || !longitude) {
+      return res.status(400).json({ msg: "Latitude and longitude required" });
+    }
+    
+    console.log("📍 Updating provider location for request:", requestId);
+    
+    // Find the request
+    const request = await ServiceRequest.findById(requestId)
+      .populate('provider', 'fullName');
+    
+    if (!request) {
+      return res.status(404).json({ msg: "Request not found" });
+    }
+    
+    // Check if request is accepted
+    if (request.status !== "accepted" && request.status !== "in-progress") {
+      return res.status(400).json({ 
+        msg: `Cannot update location for ${request.status} request` 
+      });
+    }
+    
+    // Update provider's location
+    const provider = await ServiceProvider.findById(request.provider._id);
+    
+    if (!provider) {
+      return res.status(404).json({ msg: "Provider not found" });
+    }
+    
+    provider.currentLocation = {
+      type: "Point",
+      coordinates: [longitude, latitude],
+      lastUpdated: new Date()
+    };
+    
+    await provider.save();
+    
+    // Notify customer via socket if available
+    const io = req.app.get("io");
+    const customer = await Customer.findById(request.customer);
+    
+    if (customer && customer.socketId) {
+      io.to(customer.socketId).emit("provider-location-update", {
+        requestId: request._id,
+        location: {
+          latitude,
+          longitude,
+          lastUpdated: new Date()
+        }
+      });
+    }
+    
+    console.log("✅ Provider location updated successfully");
+    
+    res.json({ 
+      msg: "Location updated successfully",
+      location: { latitude, longitude }
+    });
+    
+  } catch (err) {
+    console.error("❌ Error updating provider location:", err);
+    res.status(500).json({ 
+      msg: "Server error", 
+      error: err.message 
+    });
+  }
+});
 
 module.exports = router;

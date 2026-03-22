@@ -1,6 +1,8 @@
 import axios from "axios";
 import { motion } from "framer-motion";
 import L from 'leaflet';
+import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import 'leaflet/dist/leaflet.css';
 import {
   Award,
@@ -19,7 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
-import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
 
 // Fix for Leaflet marker icons
@@ -50,6 +52,8 @@ export default function ProviderDashboard() {
  const [showMapModal, setShowMapModal] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+   const [providerLocation, setProviderLocation] = useState(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   // ----------------------
   // API DATA STATES
   // ----------------------
@@ -59,10 +63,42 @@ export default function ProviderDashboard() {
   const [completedJobs, setCompletedJobs] = useState([]);
   const token = localStorage.getItem("token"); // Auth token
    
-
+  const getProviderLocation = () => {
+  setIsLoadingLocation(true);
+  
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported by your browser");
+    setIsLoadingLocation(false);
+    return false;
+  }
+  
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const location = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+      setProviderLocation(location);
+      console.log("Provider location:", location);
+      setIsLoadingLocation(false);
+    },
+    (error) => {
+      console.error("Geolocation error:", error);
+      alert("Unable to get your location. Please enable location services.");
+      setIsLoadingLocation(false);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    }
+  );
+  
+  return true;
+};
   // Map Component for Modal
 const MapModal = () => {
-  console.log("MapModal rendering with:", { selectedLocation, selectedCustomer });
+  console.log("MapModal rendering with:", { selectedLocation, selectedCustomer ,providerLocation});
  
   if (!selectedLocation) {
     console.log("No location selected, returning null");
@@ -71,59 +107,387 @@ const MapModal = () => {
  
   const position = [selectedLocation.latitude, selectedLocation.longitude];
   console.log("Map position:", position);
- 
-  return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+  
+  const hasProviderLocation = providerLocation && providerLocation.latitude && providerLocation.longitude;
+ return (
+    <div 
+      className="fixed inset-0 z-50 bg-white" 
       onClick={() => setShowMapModal(false)}
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-96 overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b border-gray-200">
-          <h3 className="text-xl font-bold text-gray-900">
-            {selectedCustomer?.name || "Customer"} Location
-          </h3>
-          <button
-            onClick={() => setShowMapModal(false)}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X size={24} />
-          </button>
+      {/* Minimal Header - Floating on top of map */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-white shadow-md p-4 flex justify-between items-center">
+        <h3 className="text-lg font-semibold text-gray-900">
+          {selectedCustomer?.name || "Customer"} Location
+        </h3>
+        <button
+          onClick={() => setShowMapModal(false)}
+          className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+        >
+          <X size={24} className="text-gray-600" />
+        </button>
+      </div>
+      
+      {/* Location Status - Floating on top of map */}
+      <div className="absolute top-16 left-0 right-0 z-10 px-4 py-2 bg-white/95 backdrop-blur-sm shadow-sm flex justify-between items-center border-b border-gray-200">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${hasProviderLocation ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+          <span className="text-sm text-gray-600">
+            {hasProviderLocation ? "Your location available" : "Your location not available"}
+          </span>
         </div>
-        <div className="relative w-full h-[calc(100%-4rem)]">
-          {position && position[0] && position[1] ? (
-            <MapContainer
-              key={`${position[0]}-${position[1]}`}
-              center={position}
-              zoom={15}
-              style={{ height: '100%', width: '100%' }}
-              zoomControl={true}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <Marker position={position}>
+        {!hasProviderLocation && (
+          <button
+            onClick={getProviderLocation}
+            disabled={isLoadingLocation}
+            className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-sm"
+          >
+            {isLoadingLocation ? "Getting location..." : "📍 Get My Location"}
+          </button>
+        )}
+      </div>
+      
+      {/* Full Screen Map */}
+      <div className="absolute inset-0 top-[88px]">
+        {position && position[0] && position[1] ? (
+          <MapContainer
+            key={`${position[0]}-${position[1]}-${hasProviderLocation}`}
+            center={position}
+            zoom={13}
+            style={{ height: '100%', width: '100%' }}
+            zoomControl={true}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            
+            {/* Customer Marker */}
+            <Marker position={position}>
+              <Popup>
+                <div className="p-2 min-w-[200px]">
+                  <strong className="text-gray-900 text-lg block">{selectedCustomer?.name || "Customer"}</strong>
+                  <p className="text-gray-600 mt-1">📍 Service Location</p>
+                  <hr className="my-2" />
+                  <small className="text-gray-500">
+                    Lat: {selectedLocation.latitude.toFixed(6)}<br />
+                    Lng: {selectedLocation.longitude.toFixed(6)}
+                  </small>
+                </div>
+              </Popup>
+            </Marker>
+            
+            {/* Provider Marker */}
+            {hasProviderLocation && (
+              <Marker 
+                position={[providerLocation.latitude, providerLocation.longitude]}
+                icon={L.divIcon({
+                  className: 'custom-div-icon',
+                  html: `<div style="background-color: #3b82f6; width: 14px; height: 14px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 2px #3b82f6;"></div>`,
+                  iconSize: [14, 14],
+                  popupAnchor: [0, -7]
+                })}
+              >
                 <Popup>
                   <div className="p-2">
-                    <strong className="text-gray-900">{selectedCustomer?.name || "Customer"}</strong><br />
-                    📍 Service Location<br />
-                    <small>Lat: {selectedLocation.latitude.toFixed(6)}<br />
-                    Lng: {selectedLocation.longitude.toFixed(6)}</small>
+                    <strong className="text-gray-900">Your Location</strong><br />
+                    📍 Current Position<br />
+                    <small className="text-gray-500">
+                      Lat: {providerLocation.latitude.toFixed(6)}<br />
+                      Lng: {providerLocation.longitude.toFixed(6)}
+                    </small>
                   </div>
                 </Popup>
               </Marker>
-            </MapContainer>
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-gray-500">Invalid coordinates</p>
-            </div>
-          )}
+            )}
+            
+            {/* Routing Control */}
+            {hasProviderLocation && (
+              <RoutingControl 
+                start={providerLocation}
+                end={selectedLocation}
+              />
+            )}
+          </MapContainer>
+        ) : (
+          <div className="flex items-center justify-center h-full bg-gray-50">
+            <p className="text-gray-500">Invalid coordinates</p>
+          </div>
+        )}
+      </div>
+    
+      <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none">
+        <div className="bg-black/75 text-white text-xs p-2 rounded-lg inline-block mx-auto backdrop-blur-sm">
+          {hasProviderLocation 
+            ? "✅ Blue line shows route • Directions panel on the right" 
+            : "📍 Click 'Get My Location' to see route and directions"}
         </div>
       </div>
     </div>
   );
 };
-
+// Routing Control Component
+const RoutingControl = ({ start, end }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (!map || !start || !end) return;
+    
+    // Clear existing routing controls
+    const existingControl = document.querySelector('.leaflet-routing-container');
+    if (existingControl) {
+      existingControl.remove();
+    }
+    
+    // Create routing control
+    const routingControl = L.Routing.control({
+      waypoints: [
+        L.latLng(start.latitude, start.longitude),
+        L.latLng(end.latitude, end.longitude)
+      ],
+      routeWhileDragging: false,
+      showAlternatives: false,
+      fitSelectedRoutes: true,
+      lineOptions: {
+        styles: [
+          { 
+            color: '#2563eb',
+            weight: 6,
+            opacity: 0.9,
+            lineCap: 'round',
+            lineJoin: 'round'
+          },
+          { 
+            color: '#3b82f6',
+            weight: 8,
+            opacity: 0.2,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }
+        ],
+        extendToWaypoints: true,
+        missingRouteTolerance: 0
+      },
+      createMarker: function() { return null; },
+      addWaypoints: false,
+      draggableWaypoints: false,
+      show: false,
+      collapsible: false,
+      formatter: new L.Routing.Formatter({
+        units: 'metric',
+        unitNames: {
+          meters: 'm',
+          kilometers: 'km'
+        },
+        roundingSensitivity: 1
+      })
+    }).addTo(map);
+    
+    // Customize the route line after it's created
+    routingControl.on('routesfound', function(e) {
+      const routes = e.routes;
+      const route = routes[0];
+      const distance = (route.summary.totalDistance / 1000).toFixed(1);
+      const time = Math.round(route.summary.totalTime / 60);
+      
+      // Remove default route line and add custom one
+      const existingLayers = document.querySelectorAll('.leaflet-routing-line');
+      existingLayers.forEach(layer => {
+        if (layer.parentElement) {
+          layer.parentElement.remove();
+        }
+      });
+      
+      // Add custom polyline
+      const polyline = L.polyline(route.coordinates, {
+        color: '#1e40af',
+        weight: 6,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(map);
+      
+      const glowPolyline = L.polyline(route.coordinates, {
+        color: '#60a5fa',
+        weight: 10,
+        opacity: 0.2,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(map);
+      
+      if (window._customRouteLines) {
+        window._customRouteLines.forEach(line => map.removeLayer(line));
+      }
+      window._customRouteLines = [glowPolyline, polyline];
+      
+      // Create directions panel
+      createDirectionsPanel(route, distance, time);
+    });
+    
+    // Function to create directions panel
+    const createDirectionsPanel = (route, distance, time) => {
+      const existingPanel = document.querySelector('.directions-panel');
+      if (existingPanel) {
+        existingPanel.remove();
+      }
+      
+      const panel = document.createElement('div');
+      panel.className = 'directions-panel';
+      panel.innerHTML = `
+        <div class="directions-header">
+          <div class="directions-summary">
+            <div class="summary-item">
+              <span class="summary-icon">📏</span>
+              <span class="summary-value">${distance} km</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-icon">⏱️</span>
+              <span class="summary-value">${time} min</span>
+            </div>
+          </div>
+          <button class="directions-close">✕</button>
+        </div>
+        <div class="directions-list"></div>
+      `;
+      
+      const directionsList = panel.querySelector('.directions-list');
+      
+      if (route.instructions && route.instructions.length > 0) {
+        route.instructions.forEach((instruction, index) => {
+          const instructionDiv = document.createElement('div');
+          instructionDiv.className = 'instruction-item';
+          
+          let distanceText = '';
+          if (instruction.distance) {
+            const dist = instruction.distance;
+            if (dist < 1000) {
+              distanceText = `${Math.round(dist)} m`;
+            } else {
+              distanceText = `${(dist / 1000).toFixed(1)} km`;
+            }
+          }
+          
+          instructionDiv.innerHTML = `
+            <div class="instruction-marker">${index + 1}</div>
+            <div class="instruction-content">
+              <div class="instruction-text">${instruction.text || instruction}</div>
+              ${distanceText ? `<div class="instruction-distance">${distanceText}</div>` : ''}
+            </div>
+          `;
+          
+          directionsList.appendChild(instructionDiv);
+        });
+      }
+      
+      const closeBtn = panel.querySelector('.directions-close');
+      closeBtn.addEventListener('click', () => {
+        panel.remove();
+      });
+      
+      document.body.appendChild(panel);
+    };
+    
+    // Add CSS for directions panel
+    const style = document.createElement('style');
+    style.textContent = `
+      .directions-panel {
+        position: fixed;
+        top: 88px;
+        right: 20px;
+        width: 320px;
+        max-height: calc(100vh - 120px);
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .directions-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .directions-summary {
+        display: flex;
+        gap: 16px;
+      }
+      .summary-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .summary-value {
+        font-weight: 600;
+        color: #2563eb;
+      }
+      .directions-close {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 4px 8px;
+      }
+      .directions-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        max-height: calc(100vh - 180px);
+      }
+      .instruction-item {
+        display: flex;
+        gap: 12px;
+        padding: 12px;
+        border-bottom: 1px solid #f3f4f6;
+      }
+      .instruction-marker {
+        width: 24px;
+        height: 24px;
+        background: #f3f4f6;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .instruction-text {
+        font-size: 13px;
+        color: #374151;
+      }
+      @media (max-width: 768px) {
+        .directions-panel {
+          top: auto;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          max-height: 50vh;
+          border-radius: 12px 12px 0 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      if (routingControl) {
+        routingControl.remove();
+      }
+      if (window._customRouteLines) {
+        window._customRouteLines.forEach(line => map.removeLayer(line));
+        window._customRouteLines = [];
+      }
+      const panel = document.querySelector('.directions-panel');
+      if (panel) panel.remove();
+      if (style.parentNode) style.parentNode.removeChild(style);
+    };
+  }, [map, start, end]);
+  
+  return null;
+};
   // First, check the provider details to get the ID
 fetch('http://localhost:5000/api/sp-service-page/my-details', {
   headers: { 'Authorization': `Bearer ${token}` }
@@ -324,7 +688,22 @@ useEffect(() => {
 
       // Fetch accepted requests
       const acceptedRes = await api.get("/service-provider/sp-requests/accepted");
-      setAcceptedRequests(acceptedRes.data || []);
+      const mappedAcceptedRequests = (acceptedRes.data || []).map(request => ({
+  ...request,
+  // Map wardNo to ward for consistency
+  ward: request.wardNo || request.ward,
+  municipality: request.municipality || request.address?.municipality,
+  district: request.district || request.address?.district,
+  province: request.province || request.address?.province,
+  // Also map the address object if needed
+  address: {
+    ward: request.wardNo || request.ward,
+    municipality: request.municipality,
+    district: request.district,
+    province: request.province
+  }
+}));
+setAcceptedRequests(mappedAcceptedRequests);
 
       // Fetch completed jobs
       const completedRes = await api.get("/service-provider/sp-requests/completed");
@@ -732,6 +1111,9 @@ const fetchProviderRatings = async () => {
     setSelectedCustomer({ name: customerName });
     setShowMapModal(true);
     console.log("Showing map with existing coordinates");
+     if (!providerLocation) {
+      getProviderLocation();
+    }
   } else if (requestId) {
     // If no coordinates, fetch from backend
     try {
@@ -767,10 +1149,15 @@ const fetchProviderRatings = async () => {
         });
         setSelectedCustomer({ name: customerName });
         setShowMapModal(true);
+
+         if (!providerLocation) {
+          getProviderLocation();
+        }
       } else {
         console.error("Invalid location format:", response.data);
         alert("Customer location not available in correct format. Please ask customer to enable location services.");
       }
+      
     } catch (error) {
       console.error("Error fetching customer location:", error);
       if (error.response) {
@@ -1437,15 +1824,65 @@ function AcceptedTab({ requests, onComplete, onCall, onOpenMap }) {
               <p className="text-gray-600">
                 <span className="font-medium">Phone:</span> {r.customerPhone || "Not provided"}
               </p>
-              <p className="text-gray-600">
-                <span className="font-medium">Address:</span> {r.address || "Not specified"}
-              </p>
-              <p className="text-gray-600">
-                <span className="font-medium">Municipality:</span> {r.municipality || "Not specified"}
-              </p>
-              <p className="text-gray-600">
-                <span className="font-medium">Ward:</span> {r.ward || "Not specified"}
-              </p>
+              <div className="mt-2 pt-2 border-t border-gray-100">
+      <p className="text-gray-600">
+        <span className="font-medium">📍 Location:</span>
+      </p>
+       <div className="space-y-1">
+                  {/* Display ward information prominently */}
+                  {(r.ward || r.wardNo) && (r.ward !== "Not specified" && r.ward !== "") && (
+                    <p className="text-gray-700">
+                      <span className="font-medium">Ward No:</span> {r.ward || r.wardNo}
+                    </p>
+                  )}
+                  {r.municipality && r.municipality !== "Not specified" && r.municipality !== "" && (
+                    <p className="text-gray-700">
+                      <span className="font-medium">Municipality:</span> {r.municipality}
+                    </p>
+                  )}
+                  {r.district && r.district !== "Not specified" && r.district !== "" && (
+                    <p className="text-gray-700">
+                      <span className="font-medium">District:</span> {r.district}
+                    </p>
+                  )}
+                  {r.province && r.province !== "Not specified" && r.province !== "" && (
+                    <p className="text-gray-700">
+                      <span className="font-medium">Province:</span> {r.province}
+                    </p>
+                  )}
+                  
+                  {/* If we have an address object, try to display it */}
+                  {r.address && r.address !== "Not specified" && r.address !== "" && typeof r.address === 'object' && (
+                    <>
+                      {r.address.ward && (
+                        <p className="text-gray-700">
+                          <span className="font-medium">Ward No:</span> {r.address.ward}
+                        </p>
+                      )}
+                      {r.address.street && (
+                        <p className="text-gray-700">
+                          <span className="font-medium">Street:</span> {r.address.street}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  
+                  {/* If we have a full address string */}
+                  {r.fullAddress && r.fullAddress !== "Not specified" && r.fullAddress !== "" && (
+                    <p className="text-gray-700">
+                      <span className="font-medium">Full Address:</span> {r.fullAddress}
+                    </p>
+                  )}
+                  
+                  {/* Check if any location data exists */}
+                  {(!r.ward || r.ward === "Not specified" || r.ward === "") && 
+                   (!r.municipality || r.municipality === "Not specified" || r.municipality === "") && 
+                   (!r.district || r.district === "Not specified" || r.district === "") && (
+                    <p className="text-gray-500 text-sm">No address information available</p>
+                  )}
+                </div>
+              </div>
+    
               <p className="text-gray-600">
                 <span className="font-medium">Distance:</span> {r.distanceKm || "0"} km away
               </p>
@@ -1620,10 +2057,9 @@ function CompletedTab({ completedJobs ,reviews}) {
                   {getCompletionDate(job)}
                 </p>
                 {job.review ? (
-                  <div className="mt-4 p-6 bg-yellow-50 rounded-lg border border-yellow-200 w-full md:w-[110%] md:-ml-[5%]">
-                    <div className="flex flex-col gap-2">
+                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-gray-700 italic">"{job.review}"</p>
-                    <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
                       {[...Array(5)].map((_, i) => (
                         <Star 
@@ -1643,7 +2079,7 @@ function CompletedTab({ completedJobs ,reviews}) {
                     )}
                   </div>
                   </div>
-                </div>
+                
                 ) : (
                   <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <div className="flex items-center gap-2">
