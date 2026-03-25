@@ -825,6 +825,159 @@ useEffect(() => {
     } 
   };
 
+  // Call Options Dropdown - Phone & WhatsApp
+const CallOptionsDropdown = ({ phoneNumber, providerName }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!phoneNumber) return null;
+  
+  const cleanedPhone = cleanPhoneNumber(phoneNumber);
+  // WhatsApp requires number without '+' and without spaces
+  const whatsappPhone = cleanedPhone.replace('+', '').replace(/\s/g, '');
+  
+  const handleRegularCall = () => {
+    window.location.href = `tel:${cleanedPhone}`;
+  };
+  
+  const handleWhatsAppCall = () => {
+    // WhatsApp voice call
+    window.location.href = `https://wa.me/${whatsappPhone}`;
+  };
+  
+  const handleWhatsAppMessage = () => {
+    // WhatsApp message with pre-filled text
+    const message = encodeURIComponent(`Hi, I'm interested in your ${selectedCategory || 'service'} services.`);
+    window.location.href = `https://wa.me/${whatsappPhone}?text=${message}`;
+  };
+  
+  const handleCopyNumber = () => {
+    navigator.clipboard.writeText(cleanedPhone);
+    alert(`Phone number copied: ${formatPhone(phoneNumber)}`);
+    setIsOpen(false);
+  };
+  
+  return (
+    <>
+      <div className="relative">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="gap-1.5 px-4 py-2 bg-linear-to-r from-green-500 to-emerald-600 rounded-lg flex items-center justify-center text-white font-medium hover:from-green-600 hover:to-emerald-700 transition-colors"
+        >
+          <FaPhone size={14} className="text-white text-base rotate-90" />
+          <span>Contact</span>
+          <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
+            <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl z-50 border border-gray-200 overflow-hidden">
+              {/* Direct Phone Call Option */}
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  handleRegularCall();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 transition-colors border-b border-gray-100"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <FaPhone className="text-green-600 text-lg rotate-90" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-gray-900">Phone Call</div>
+                  <div className="text-xs text-gray-500">{formatPhone(phoneNumber)}</div>
+                </div>
+              </button>
+              
+              {/* WhatsApp Call Option */}
+              <a
+                href={`https://wa.me/${whatsappPhone}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setIsOpen(false)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 transition-colors border-b border-gray-100"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-5.46-4.45-9.91-9.91-9.91zm0 18.23c-1.5 0-2.97-.4-4.26-1.16l-.31-.18-3.11.82.83-3.04-.2-.32c-.83-1.35-1.27-2.91-1.27-4.51 0-4.61 3.76-8.37 8.37-8.37s8.37 3.76 8.37 8.37-3.76 8.37-8.37 8.37zm4.59-6.27c-.25-.13-1.49-.74-1.72-.82-.23-.08-.4-.13-.57.13-.17.26-.66.82-.81.99-.15.17-.3.19-.55.06-.25-.13-1.05-.39-2-1.23-.74-.66-1.24-1.47-1.38-1.72-.15-.25-.02-.38.11-.51.11-.11.25-.29.38-.44.13-.15.17-.26.25-.43.08-.17.04-.32-.02-.45-.06-.13-.57-1.37-.78-1.88-.2-.5-.4-.44-.57-.44-.15 0-.32-.01-.49-.01-.17 0-.45.07-.69.32-.24.25-.92.9-.92 2.2 0 1.3.95 2.56 1.08 2.74.13.17 1.87 2.86 4.53 4.01.63.27 1.13.43 1.51.55.64.2 1.22.17 1.68.1.51-.07 1.49-.61 1.7-1.2.21-.59.21-1.1.15-1.2-.06-.1-.22-.17-.47-.3z"/>
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-gray-900">WhatsApp Call</div>
+                  <div className="text-xs text-gray-500">Voice/Video call via WhatsApp</div>
+                </div>
+              </a>
+              
+              {/* WhatsApp Message Option */}
+              <a
+                href={`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(`Hi, I'm interested in your services.`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setIsOpen(false)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 transition-colors border-b border-gray-100"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-gray-900">WhatsApp Message</div>
+                  <div className="text-xs text-gray-500">Send a message</div>
+                </div>
+              </a>
+              
+              {/* Copy Number Option */}
+              <button
+                onClick={handleCopyNumber}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-gray-900">Copy Number</div>
+                  <div className="text-xs text-gray-500">Copy to clipboard</div>
+                </div>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+};
+
+const cleanPhoneNumber = (phone) => {
+  if (!phone) return "";
+  let cleaned = phone.toString().trim();
+  if (cleaned.match(/^\+?\d+$/)) {
+  } else {
+    cleaned = cleaned.replace(/[^\d+]/g, '');
+  }
+  if (cleaned.startsWith('977') && !cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned;
+  }
+  else if (cleaned.startsWith('0')) {
+    cleaned = '+977' + cleaned.slice(1);
+  }
+  else if (/^98\d{8}$/.test(cleaned) && cleaned.length === 10) {
+    cleaned = '+977' + cleaned;
+  }
+  else if (/^01\d{7}$/.test(cleaned) && cleaned.length === 9) {
+    cleaned = '+977' + cleaned;
+  }
+  else if (cleaned.length === 10 && /^[0-9]+$/.test(cleaned)) {
+    cleaned = '+977' + cleaned;
+  }
+  
+  console.log(`Cleaned phone: ${phone} -> ${cleaned}`);
+  return cleaned;
+};
   // handleSendRequest - matches /customer/request/send-request
   const handleSendRequest = async (providerId, providerName) => {
     try {
@@ -1024,8 +1177,13 @@ useEffect(() => {
   const handleCategoryClick = (service) => {
     console.log("Category clicked:", service);
   console.log("Service title:", service.title);
-    const slug = service.title.toLowerCase().replace(/\s+/g, "-");
-    console.log("Generated slug:", slug);
+      let slug = service.title.toLowerCase()
+    .replace(/\s+/g, '-')       
+    .replace(/[\/]/g, '-')       
+    .replace(/[&]/g, '-and-')      
+    .replace(/[^\w\-]/g, '');       
+  
+  console.log("Generated slug:", slug); 
     setSelectedCategory(service.title);
     setActiveTab("services");
     navigate(`/customer-dashboard/${slug}`);
@@ -1069,15 +1227,29 @@ useEffect(() => {
   localStorage.setItem("user", JSON.stringify(updatedProfile));
   };
 
-  // Format phone number for display
   const formatPhone = (phone) => {
-    if (!phone) return "Not set";
-    if (phone.startsWith("+977")) {
-      return phone.replace('+977', '').replace(/(\d{2})(\d{3})(\d{4})/, '$1-$2-$3');
+  if (!phone) return "Not set";
+  let cleaned = phone.toString().replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('+977')) {
+    const local = cleaned.slice(4);
+    if (local.length === 10) {
+      return `+977 ${local.slice(0, 3)}-${local.slice(3, 7)}-${local.slice(7)}`;
     }
-    return phone;
-  };
-   // Location tracking functions
+      return `+977 ${local}`;
+  }
+  
+  if (cleaned.startsWith('977')) {
+    const local = cleaned.slice(3);
+    if (local.length === 10) {
+      return `+977 ${local.slice(0, 3)}-${local.slice(3, 7)}-${local.slice(7)}`;
+    }
+    return `+977 ${local}`;
+  }
+  return phone;
+};
+
+
+
 const startLocationUpdates = (requestId) => {
   if (locationUpdateInterval) {
     clearInterval(locationUpdateInterval);
@@ -1188,6 +1360,21 @@ const stopLocationUpdates = () => {
     service: selectedCategory,
      reviews: provider.reviews || [] 
   };
+};
+const validatePhoneNumber = (phone) => {
+  if (!phone) return null;
+  let cleaned = phone.toString().replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '+977' + cleaned.slice(1);
+  }
+  if (/^\d{10}$/.test(cleaned)) {
+    cleaned = '+977' + cleaned;
+  }
+  if (/^98\d{8}$/.test(cleaned)) {
+    cleaned = '+977' + cleaned;
+  }
+  
+  return cleaned;
 };
 const renderStars = (rating) => {
     return (
@@ -1795,15 +1982,33 @@ const renderStars = (rating) => {
 
                                 {/* Action Buttons */}
                                 <div className="flex flex-col gap-2 shrink-0 ml-4">
-                                  {provider.phone && (
-                                    <a
-                                      href={`tel:${provider.phone}`}
-                                      className="gap-1.5 px-4 py-2 bg-linear-to-r from-green-500 to-emerald-600 rounded-lg flex items-center justify-center text-white font-medium hover:from-green-600 hover:to-emerald-700 transition-colors"
-                                    >
-                                      <FaPhone size={14} className="text-white text-base rotate-90" />
-                                      <span>Call</span>
-                                    </a>
-                                  )}
+                                                 {(() => {
+                                    // Debug: Log the provider phone to console
+                                    console.log("Provider in request:", {
+                                      name: provider.fullName,
+                                      phone: provider.phone,
+                                      rawPhone: provider.phone,
+                                      phoneType: typeof provider.phone
+                                    });
+                                    
+                                    // Get phone number from various possible locations
+                                    const providerPhone = provider.phone || 
+                                                        provider.contactNumber || 
+                                                        provider.mobile || 
+                                                        provider.contact?.phone ||
+                                                        null;
+                                    if (providerPhone) {
+                                      return (
+                                        <CallOptionsDropdown 
+                                          phoneNumber={providerPhone}
+                                          providerName={provider.fullName || provider.name}
+                                        />
+                                      );
+                                    } else {
+                                      console.warn("No phone number found for provider:", provider.fullName);
+                                      return null;
+                                    }
+                                  })()}
                                   {request.status === "accepted" && (
                                     <button
                                       onClick={() => handleCompleteRequest(request._id, provider.fullName)}
@@ -2026,11 +2231,12 @@ const renderStars = (rating) => {
                                 </div>
                               </div>
                               <div className="flex gap-2">
-                                {selectedService.provider?.phone && (
-                                  <a href={`tel:${selectedService.provider.phone}`} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
-                                    <FaPhone size={16} />Call
-                                  </a>
-                                )}
+                                 {selectedService.provider?.phone && (
+                                <CallOptionsDropdown 
+                                  phoneNumber={selectedService.provider.phone}
+                                  providerName={selectedService.provider.fullName}
+                                />
+                              )}
                                 <button onClick={() => showCancelConfirmation(selectedService)} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2 border border-red-200">
                                   <X size={16} />Cancel Request
                                 </button>
@@ -2368,7 +2574,7 @@ const renderStars = (rating) => {
 
                                     {/* Right: Action Buttons */}
                                     <div className="lg:w-80 flex flex-col gap-4">
-                                      {/* Call Button Section */}
+                                      {/* Call Button Section  with Phone 7 viber*/}
                                       {processedProvider.phone && (
                                         <div className="bg-linear-to-r from-green-50 to-emerald-50 rounded-2xl p-3 border border-green-100">
                                           <div className="flex items-center justify-between">
@@ -2382,13 +2588,10 @@ const renderStars = (rating) => {
                                                 </p>
                                               </div>
                                             </div>
-                                            <a
-                                              href={`tel:${processedProvider.phone.replace(/\s+/g, '')}`}
-                                              className="flex items-center gap-1.5 px-4 py-2 bg-linear-to-r from-green-500 to-emerald-600 text-white font-bold rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow hover:shadow-md transform hover:-translate-y-0.5 text-sm"
-                                            >
-                                              <span>CALL NOW</span>
-                                              <FaPhone className="text-sm rotate-90" />
-                                            </a>
+                                            <CallOptionsDropdown 
+                                              phoneNumber={processedProvider.phone}
+                                              providerName={processedProvider.name}
+                                            />
                                           </div>
                                         </div>
                                       )}
