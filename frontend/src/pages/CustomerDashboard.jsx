@@ -73,8 +73,9 @@ const SERVICES = [
   { id: 16, title: "Waterproofing", img: waterproofing },
 ];
 
-const API_BASE_URL = "http://localhost:5000/api";
-const SERVICE_NAME_MAPPING = {
+const API_BASE_URL = import.meta.env.VITE_APP_API_URL 
+  ? `${import.meta.env.VITE_APP_API_URL}/api` 
+  : "http://localhost:5000/api";const SERVICE_NAME_MAPPING = {
   'home-tutors': 'Home Tutors',
   'home tutors': 'Home Tutors',
   'hometutors': 'Home Tutors',
@@ -1177,13 +1178,13 @@ const cleanPhoneNumber = (phone) => {
   const handleCategoryClick = (service) => {
     console.log("Category clicked:", service);
   console.log("Service title:", service.title);
-      let slug = service.title.toLowerCase()
+  let slug = service.title.toLowerCase()
     .replace(/\s+/g, '-')       
     .replace(/[\/]/g, '-')       
     .replace(/[&]/g, '-and-')      
     .replace(/[^\w\-]/g, '');       
   
-  console.log("Generated slug:", slug); 
+  console.log("Generated slug:", slug);
     setSelectedCategory(service.title);
     setActiveTab("services");
     navigate(`/customer-dashboard/${slug}`);
