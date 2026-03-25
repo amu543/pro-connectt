@@ -1,5 +1,6 @@
-src/utils/imageUtils.js
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+// src/utils/imageUtils.js
+// For Vite - use import.meta.env
+const API_BASE_URL = import.meta.env.VITE_APP_API_URL || "http://localhost:5000";
 
 export const getImageUrl = (photoPath) => {
   if (!photoPath) return null;
@@ -16,6 +17,6 @@ export const getImageUrl = (photoPath) => {
 };
 
 export const getInitials = (name) => {
-  if (!name) return "?";
-  return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+  if (!name) return "CU";
+  return name.split(" ").map(n => n[0]).join("").toUpperCase();
 };

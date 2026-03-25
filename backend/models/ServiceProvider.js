@@ -9,6 +9,7 @@ const ServiceProviderSchema = new mongoose.Schema({
   password: { type: String, required: true },
   profilePhoto: { type: String, required: true },
   service: { type: String, required: true },
+  servicesDone: { type: Number, default: 0 },
   yearsOfExperience: { type: String, required: true },
   skillsExpertise: [
     { 

@@ -24,13 +24,14 @@ api.interceptors.request.use((config) => {
 // Rating service functions
 const ratingService = {
   // Add a rating & review
-  addRating: async (serviceProviderId,  rating, review) => {
+  addRating: async (serviceProviderId,  rating, review,requestId) => {
     try {
         
       const requestData = {
          serviceProviderId: serviceProviderId,  // This must match exactly
         rating: rating,
-        review: review
+        review: review,
+        requestId: requestId
       };
       
       console.log("Sending rating data:", requestData);
@@ -95,7 +96,7 @@ export default function ReviewPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { provider, service, date, skills, providerName } = location.state || {};
+  const { provider, service, date, skills, providerName ,requestId} = location.state || {};
    useEffect(() => {
     console.log("========== REVIEW PAGE DEBUG ==========");
     console.log("URL Params - id:", id);
@@ -191,7 +192,8 @@ export default function ReviewPage() {
       const result = await ratingService.addRating(
         id,
         rating,
-        reviewText
+        reviewText,
+        requestId
       );
 
       // Update local state

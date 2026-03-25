@@ -69,7 +69,7 @@ router.get(
         service: serviceToFind,
         isVerified: true
       }).select(
-        "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio isOnline ratings"
+        "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio isOnline ratings servicesDone"
       );
        console.log(`✅ Found ${providers.length} providers for ${serviceToFind}`);
         const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
@@ -116,6 +116,8 @@ router.get(
           distanceInKm: distanceInKm ? parseFloat(distanceInKm.toFixed(1)) : null,
           rating: p.ratings?.avgRating || 0,
           totalRatings: p.ratings?.totalRatings || 0,
+          servicesDone: p.servicesDone || 0, 
+          totalServices: p.servicesDone || 0, 
            reviews: reviews.map(r => ({
               rating: r.rating,
               text: r.review,
@@ -269,7 +271,7 @@ router.get("/my-requests/:customerId", async (req, res) => {
     const requests = await ServiceRequest.find({
       customer: req.params.customerId,
       status: { $in: ["pending", "accepted"] }
-    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio  distanceInKm isOnline avgRating totalRatings reviews");
+    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio  distanceInKm isOnline avgRating totalRatings reviews servicesDone");
 
  // Calculate distance for each request based on provider's location
     const requestsWithDistance = requests.map(request => {
@@ -393,6 +395,9 @@ router.post("/complete/:requestId",customerAuth, async (req, res) => {
       request.status = "completed";
     request.completedAt = new Date();
     await request.save();
+    await ServiceProvider.findByIdAndUpdate(request.provider, {
+    $inc: { servicesDone: 1 }
+  });
     try {
      const io = req.app.get("io");
     const provider = await ServiceProvider.findById(request.provider).select("socketId");
@@ -507,13 +512,14 @@ router.get("/completed-requests/:customerId", async (req, res) => {
     const requests = await ServiceRequest.find({
       customer: customerId,
       status: "completed"
-    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio isOnline")
+    }).populate("provider", "fullName phone service yearsOfExperience profilePhoto currentLocation skillsExpertise shortBio isOnline servicesDone")
       .sort({ completedAt: -1 }); // Most recent first
     
     console.log(`✅ Found ${requests.length} completed requests`);
      requests.forEach((req, index) => {
       console.log(`Provider ${index}: ${req.provider?.fullName} - Photo: ${req.provider?.profilePhoto}`);
     });
+  
     // Add completedAt to the response if not present
      const validRequests = requests.filter(req => req.provider !== null);
     
@@ -533,7 +539,8 @@ router.get("/completed-requests/:customerId", async (req, res) => {
           // Find review for this provider from this customer
           const review = await Rating.findOne({
             serviceProviderId: req.provider._id,
-            customerId: customerId
+            customerId: customerId,
+            requestId: req._id 
           });
         // Find review for this provider from this customer
         if (review) {

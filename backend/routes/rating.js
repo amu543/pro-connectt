@@ -16,7 +16,7 @@ const ServiceRequest = require('../models/spServiceRequest'); // to verify servi
 router.post("/add", customerAuth, async (req, res) => {
   try {
     const customerId = req.user.id;
-    const { serviceProviderId, rating, review } = req.body;
+    const { serviceProviderId, rating, review, requestId } = req.body;
 
     // 1️⃣ Only customers can rate (redundant check)
     if (req.user.role !== "customer") {
@@ -24,13 +24,14 @@ router.post("/add", customerAuth, async (req, res) => {
     }
 
     // 2️⃣ Check if the customer already rated this provider
-    const existing = await Rating.findOne({ serviceProviderId, customerId });
+    const existing = await Rating.findOne({ serviceProviderId, customerId, requestId: requestId });
     if (existing) {
       return res.status(400).json({ message: "You have already rated this provider" });
     }
 
     // 3️⃣ Check if there is a completed or customer-cancelled service
     const service = await ServiceRequest.findOne({
+      _id: requestId,
       customer: customerId,
       provider: serviceProviderId,
       status: { $in: ["completed", "customer-cancelled"] }, // ✅ allow rating
@@ -43,7 +44,7 @@ router.post("/add", customerAuth, async (req, res) => {
     }
 
     // 4️⃣ Save the rating
-    const newRating = new Rating({ serviceProviderId, customerId, rating, review: review || ""  });
+    const newRating = new Rating({ serviceProviderId, customerId, rating, review: review || "", requestId: requestId });
     await newRating.save();
 
     // 5️⃣ Update ServiceProvider avgRating & totalRatings
