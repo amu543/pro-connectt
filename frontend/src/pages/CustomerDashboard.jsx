@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone } from "react-icons/fa";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate, useParams } from "react-router-dom";
+import { getImageUrl, getInitials } from "../utils/imageUtils";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -255,25 +256,7 @@ export default function CustomerDashboard() {
    const [isLoadingLocation, setIsLoadingLocation] = useState(false);
     const [routeInfo, setRouteInfo] = useState(null);
   // Add this inside CustomerDashboard component (around line 900)
-const getFullImageUrl = (photoPath) => {
-  if (!photoPath) return null;
-  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
-  
-  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
-  
-  if (cleanPath.startsWith('/uploads')) {
-    return `http://localhost:5000${cleanPath}`;
-  }
-  
-  if (cleanPath.includes('uploads')) {
-    if (!cleanPath.startsWith('/')) {
-      cleanPath = '/' + cleanPath;
-    }
-    return `http://localhost:5000${cleanPath}`;
-  }
-  
-  return `http://localhost:5000/uploads/${cleanPath}`;
-};
+
 const isProviderOnline = (provider) =>
     provider?.isOnline === true ||
     provider?.online === true ||
@@ -1180,7 +1163,7 @@ const stopLocationUpdates = () => {
   console.log("Processing provider:", provider); // Debug log to see what we're getting
   
   const fullName = provider.fullName || provider.name || "Unknown Provider";
-  const profilePhoto = provider.profilePhoto ? getFullImageUrl(provider.profilePhoto) : null;
+  const profilePhoto = provider.profilePhoto ? getImageUrl(provider.profilePhoto) : null;
   const experience = provider.yearsOfExperience || provider.experience || "N/A";
   const skills = provider.skills || provider.topSkills || [];
   const bio = provider.shortBio || provider.bio || "No bio available";
@@ -1735,7 +1718,7 @@ const renderStars = (rating) => {
                         {/* Provider Profile Photo - Now showing actual photo */}
                         {provider.profilePhoto ? (
                           <img
-                            src={getFullImageUrl(provider.profilePhoto)}
+                            src={getImageUrl(provider.profilePhoto)}
                             alt={provider.fullName || provider.name}
                             className="w-16 h-16 rounded-full object-cover shadow-md"
                             onError={(e) => {
@@ -1943,8 +1926,7 @@ const renderStars = (rating) => {
                     </div>
                   ) : (
                     completedServices.map((service) => (
-                      <ServiceReviewCard key={service._id} service={service}  getFullImageUrl={getFullImageUrl}  // Pass the function
-            getInitials={getInitials}   />
+                      <ServiceReviewCard key={service._id} service={service} getInitials={getInitials} />
                     ))
                   )}
                 </div>
@@ -2297,7 +2279,7 @@ const renderStars = (rating) => {
                                         <div className="relative">
                                            {processedProvider.profilePhoto ? (
                                           <img
-                                                src={processedProvider.profilePhoto}
+                                                src={getImageUrl(processedProvider.profilePhoto)}
                                                 alt={processedProvider.name}
                                                 className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover shadow-xl"
                                                 onError={(e) => {
@@ -2554,7 +2536,7 @@ function SidebarItem({ icon, label, active, onClick, badge }) {
   );
 }
 
-function ServiceReviewCard({ service, getFullImageUrl, getInitials }) {
+function ServiceReviewCard({ service, getInitials }) {
   const navigate = useNavigate();
   const provider = service.provider || {};
   const review = service.review; 
@@ -2566,33 +2548,7 @@ function ServiceReviewCard({ service, getFullImageUrl, getInitials }) {
     hasReview:!!review,
     reviewData: review
   });
-   const getImageUrl = (photoPath) => {
-    console.log("getImageUrl called with:", photoPath);
-    if (!photoPath) return null;
-     if (photoPath.startsWith('http') || photoPath.startsWith('data:')) {
-    return photoPath;
-  }
-  
-  // Clean up the path - remove any double slashes
-  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
-  
-  // If the path already starts with /uploads, just add base URL
-  if (cleanPath.startsWith('/uploads')) {
-    return `http://localhost:5000${cleanPath}`;
-  }
-  
-  // If the path contains 'uploads' but doesn't start with it
-  if (cleanPath.includes('uploads')) {
-    // Make sure it starts with a slash
-    if (!cleanPath.startsWith('/')) {
-      cleanPath = '/' + cleanPath;
-    }
-    return `http://localhost:5000${cleanPath}`;
-  }
-  
-  // If it's just a filename, add /uploads/
-  return `http://localhost:5000/uploads/${cleanPath}`;
-};
+   
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -2761,8 +2717,3 @@ const NoActiveServiceMap = ({ setActiveTab })  => (
   </div>
 );
 
-// Helper function for initials
-function getInitials(name) {
-  if (!name) return "CU";
-  return name.split(" ").map(n => n[0]).join("").toUpperCase();
-}
