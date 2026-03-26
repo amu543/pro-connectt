@@ -5,7 +5,7 @@ import { FaSpinner, FaStar } from "react-icons/fa";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 // API Base URL
-const API_BASE_URL = "http://localhost:5000/api";
+import { API_BASE_URL } from "../Constants";
 
 // Configure axios
 const api = axios.create({

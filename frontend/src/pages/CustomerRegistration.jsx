@@ -2,8 +2,8 @@ import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import cusregImage from "../assets/services/cusreg.jpeg";
+import { API_BASE_URL } from "../Constants";
 import addresData from "../data/addresData.json";
-const API_BASE_URL = "http://localhost:5000/api";
 
 // Configure axios
 const api = axios.create({

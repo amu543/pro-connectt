@@ -1,6 +1,6 @@
 // src/utils/imageUtils.js
 // For Vite - use import.meta.env
-const API_BASE_URL = import.meta.env.VITE_APP_API_URL || "http://localhost:5000";
+import { API_BASE_URL } from "../Constants";
 
 export const getImageUrl = (photoPath) => {
   if (!photoPath) return null;

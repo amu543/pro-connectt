@@ -24,8 +24,8 @@ import { useEffect, useState } from "react";
 import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt, FaPhone } from "react-icons/fa";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate, useParams } from "react-router-dom";
+import { API_BASE_URL } from "../Constants";
 import { getImageUrl, getInitials } from "../utils/imageUtils";
-
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
@@ -72,10 +72,7 @@ const SERVICES = [
   { id: 15, title: "Movers & Packers", img: movers },
   { id: 16, title: "Waterproofing", img: waterproofing },
 ];
-
-const API_BASE_URL = import.meta.env.VITE_APP_API_URL 
-  ? `${import.meta.env.VITE_APP_API_URL}/api` 
-  : "http://localhost:5000/api";const SERVICE_NAME_MAPPING = {
+  const SERVICE_NAME_MAPPING = {
   'home-tutors': 'Home Tutors',
   'home tutors': 'Home Tutors',
   'hometutors': 'Home Tutors',

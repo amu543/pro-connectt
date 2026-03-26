@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../Constants";
 
 // Fix for Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -33,9 +34,6 @@ L.Icon.Default.mergeOptions({
 });
 
 
-
-// API Configuration
-const API_BASE_URL = "http://localhost:5000/api";
 
 export default function ProviderDashboard() {
   const navigate = useNavigate();
@@ -489,7 +487,7 @@ const RoutingControl = ({ start, end }) => {
   return null;
 };
   // First, check the provider details to get the ID
-fetch('http://localhost:5000/api/sp-service-page/my-details', {
+fetch('http://:5000/api/sp-service-page/my-details', {
   headers: { 'Authorization': `Bearer ${token}` }
 })
 .then(r => r.json())
@@ -505,7 +503,7 @@ fetch('http://localhost:5000/api/sp-service-page/my-details', {
     userData.phone = data.phone;
       localStorage.setItem("userData", JSON.stringify(userData));
       console.log('✅ Saved provider ID to localStorage:', providerId);
-    fetch(`http://localhost:5000/api/customer/rating/average/${providerId}`, {
+    fetch(`${API_BASE_URL}/customer/rating/average/${providerId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     .then(r => r.json())
@@ -1403,7 +1401,7 @@ function ProfileTab({
   setIsEditing,
   handleProfilePicChange
 }) {
-  const API_BASE_URL = "http://localhost:5000/api";
+  const API_BASE_URL = "http://:5000/api";
    console.log("===== PROFILE TAB RENDER =====");
    const getProfileImageSrc = () => {
     if (!profilePic) return null;

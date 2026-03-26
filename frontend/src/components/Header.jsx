@@ -3,10 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { HiLocationMarker, HiLogout, HiUser, HiX } from "react-icons/hi";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import Logo from "../assets/logo.png";
+import { API_BASE_URL } from "../Constants";
 
 
-// API Configuration
-const API_BASE_URL = "http://localhost:5000/api";
 // Helper function to get correct image URL
 const getProfileImageUrl = (photoPath) => {
   if (!photoPath) return null;

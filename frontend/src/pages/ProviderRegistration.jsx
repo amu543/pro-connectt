@@ -2,9 +2,9 @@ import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import providerregImage from "../assets/services/providerreg.jpeg";
+import { API_BASE_URL } from "../Constants";
 import addresData from "../data/addresData.json";
 
-const API_BASE_URL = "http://localhost:5000/api";
 
 // Configure axios for service provider
 const api = axios.create({
