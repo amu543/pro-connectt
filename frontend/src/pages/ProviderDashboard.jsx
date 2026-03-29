@@ -93,6 +93,16 @@ export default function ProviderDashboard() {
   
   return true;
 };
+const getProviderImageUrl = (photoPath) => {
+  if (!photoPath) return null;
+  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
+  
+  const serverBase = API_BASE_URL.replace(/\/api.*$/i, '');
+  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+  
+  return `${serverBase}${cleanPath}`;
+};
   // Map Component for Modal
 const MapModal = () => {
   console.log("MapModal rendering with:", { selectedLocation, selectedCustomer ,providerLocation});
@@ -1196,7 +1206,7 @@ const fetchProviderRatings = async () => {
           <div className="relative w-32 h-32 mx-auto mb-4">
             {profile.profilePhoto ? (
               <img
-                src={getImageUrl(profile.profilePhoto)}
+                src={getProviderImageUrl(profile.profilePhoto)}
                 alt="Profile"
                 className="w-full h-full rounded-full object-cover shadow-lg border-4 border-white"
                 onError={(e) => {
