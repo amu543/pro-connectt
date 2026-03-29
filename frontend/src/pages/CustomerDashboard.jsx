@@ -34,20 +34,21 @@ L.Icon.Default.mergeOptions({
 });
 const getProviderImageUrl = (photoPath) => {
   if (!photoPath) return null;
+  
+  // Replace localhost with your actual server IP/domain
+  if (photoPath.startsWith('http://localhost:5000') || photoPath.startsWith('http://127.0.0.1:5000')) {
+    return photoPath.replace(/http:\/\/(localhost|127\.0\.0\.1):5000/, API_BASE_URL.replace(/\/api.*$/i, ''));
+  }
+  
   if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
   
   const serverBase = API_BASE_URL.replace(/\/api.*$/i, '');
-  
   let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
   cleanPath = cleanPath.replace(/^\.+/, '');
-  
-  if (!cleanPath.startsWith('/')) {
-    cleanPath = '/' + cleanPath;
-  }
+  if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
   
   return `${serverBase}${cleanPath}`;
 };
-
 // Services images
 import babysitter from "../assets/services/babysitter.jpeg";
 import bandbaja from "../assets/services/bandbaja.jpeg";
