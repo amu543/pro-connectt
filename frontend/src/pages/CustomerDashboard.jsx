@@ -1344,10 +1344,12 @@ const stopLocationUpdates = () => {
 
   // Process provider data from API - UPDATED for your schema
   const processProvider = (provider, index) => {
-  console.log("Processing provider:", provider); // Debug log to see what we're getting
+  console.log("Processing provider:", provider); 
+   console.log("🖼️ RAW profilePhoto from providers API:", provider.profilePhoto);// Debug log to see what we're getting
   
   const fullName = provider.fullName || provider.name || "Unknown Provider";
   const profilePhoto = provider.profilePhoto ? getProviderImageUrl(provider.profilePhoto) : null;
+  console.log("🖼️ PROCESSED profilePhoto URL:", profilePhoto);
   const experience = provider.yearsOfExperience || provider.experience || "N/A";
   const skills = provider.skills || provider.topSkills || [];
   const bio = provider.shortBio || provider.bio || "No bio available";
