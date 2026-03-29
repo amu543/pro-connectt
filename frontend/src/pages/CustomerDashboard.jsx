@@ -2497,7 +2497,7 @@ const renderStars = (rating) => {
                                         <div className="relative">
                                            {processedProvider.profilePhoto ? (
                                           <img
-                                                src={getProviderImageUrl(processedProvider.profilePhoto)}
+                                                src={processedProvider.profilePhoto}
                                                 alt={processedProvider.name}
                                                 className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover shadow-xl"
                                                 onError={(e) => {
