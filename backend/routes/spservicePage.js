@@ -59,29 +59,37 @@ router.get("/my-details", spAuth, async (req, res) => {
     if (!sp) {
       return res.status(404).json({ error: "Service provider not found" });
     }
-  console.log("PROFILE PHOTO PATH FROM DB:", sp.profilePhoto);
+
+   let photoUrl = "";
+    if (sp.profilePhoto) {
+      if (sp.profilePhoto.includes('cloudinary.com') || sp.profilePhoto.startsWith('http')) {
+        photoUrl = sp.profilePhoto; // Already a full URL
+      } else {
+        // If it's just a public ID or path, construct full URL
+        photoUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/${sp.profilePhoto}`;
+      }
+    }
+
     res.json({
       _id: sp._id,
       fullName: sp.fullName,
       phone: sp.phone,
       email: sp.email,
-       photo: sp.profilePhoto ?  (sp.profilePhoto.startsWith('/') ? sp.profilePhoto : `/${sp.profilePhoto}`) : "",
+      photo: photoUrl, // ✅ Full Cloudinary URL
       experience: sp.yearsOfExperience || "",
       shortBio: sp.shortBio || "",
       rating: sp.rating || 0,
       totalRatings: sp.totalRatings || 0,
       service: sp.service,
-      shortBio: sp.shortBio || "",
       address: {
-        
-         province: sp.homeLocation?.province || sp.province || "",
+        province: sp.homeLocation?.province || sp.province || "",
         district: sp.homeLocation?.district || sp.district || "",
         municipality: sp.homeLocation?.municipality || sp.municipality || "",
         ward: sp.homeLocation?.ward || sp.wardNo || ""
       },
       skills: sp.skillsExpertise.map(skill => ({
         name: skill.name,
-        price: skill.price ?? null  // optional, show null if not provided
+        price: skill.price ?? null
       })),
       currentLocation: {
         type: sp.currentLocation.type,

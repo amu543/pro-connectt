@@ -487,7 +487,7 @@ const RoutingControl = ({ start, end }) => {
   return null;
 };
   // First, check the provider details to get the ID
-fetch('http://:5000/api/sp-service-page/my-details', {
+fetch(`${API_BASE_URL}/api/sp-service-page/my-details`, {
   headers: { 'Authorization': `Bearer ${token}` }
 })
 .then(r => r.json())
@@ -854,28 +854,23 @@ const handleSaveProfile = async () => {
         district: profileData.address?.district || profile.district,
         municipality: profileData.address?.municipality || profile.municipality,
         ward: profileData.address?.ward || profile.ward,
-        latitude: profileData.currentLocation?.coordinates?.[1] || profile.latitude,
-        longitude: profileData.currentLocation?.coordinates?.[0] || profile.longitude,
         skills: profileData.skills?.map(skill => ({
           name: skill.name || skill,
           price: skill.price || null
         })) || skills,
-        profilePhoto: profileData.profilePhoto ||profileData.profilePhotoUrl || profilePic || newProfilePhoto
+        profilePhoto: profileData.photo // ✅ Directly use Cloudinary URL
       };
+
       
       setProfile(updatedProfile);
       
       setSkills(updatedProfile.skills);
-       if (profileData.profilePhoto || profileData.profilePhotoUrl) {
-        setProfilePic(profileData.profilePhoto || profileData.profilePhotoUrl);
-      }
-      if (newProfilePhoto) {
-        setProfilePic(newProfilePhoto);
-      }
+      setProfilePic(profileData.photo);
+       
         const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
       const updatedUserData = {
         ...currentUserData,
-        profilePhoto: newProfilePhoto,
+         profilePhoto: profileData.photo, 
         name: profileData.fullName || profile.name,
         fullName: profileData.fullName || profile.name,
         phone: profileData.phone || phone
@@ -1196,16 +1191,15 @@ const fetchProviderRatings = async () => {
         <div className="text-center mb-8">
           <div className="relative w-32 h-32 mx-auto mb-4">
             {profile.profilePhoto ? (
-              <img
-                src={getImageUrl(profile.profilePhoto)}
-                alt="Profile"
-                className="w-full h-full rounded-full object-cover shadow-lg border-4 border-white"
-                onError={(e) => {
-                   console.log("Image failed to load:", profile.profilePhoto);
-                  e.target.onerror = null;
-                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Provider')}&background=374151&color=fff&size=128`;
-                }}
-              />
+             <img
+              src={profilePic || '/placeholder-avatar.png'}
+              alt="Profile"
+              className="profile-avatar"
+              onError={(e) => {
+                console.error("Image failed to load:", e.target.src);
+                e.target.src = '/placeholder-avatar.png';
+              }}
+            />
             ) : (
               <div className="w-full h-full rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-4xl font-bold shadow-lg">
                 {profile.name ? profile.name.charAt(0).toUpperCase() : 'P'}
