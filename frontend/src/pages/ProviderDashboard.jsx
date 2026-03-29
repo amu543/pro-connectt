@@ -495,34 +495,7 @@ const RoutingControl = ({ start, end }) => {
   
   return null;
 };
-  // First, check the provider details to get the ID
-fetch('http://localhost:5000/api/sp-service-page/my-details', {
-  headers: { 'Authorization': `Bearer ${token}` }
-})
-.then(r => r.json())
-.then(data => {
-  console.log('Provider data:', data);
-  console.log('Provider ID:', data._id || data.id);
-   const providerId = data._id;
-  if (providerId) {
-    const userData = JSON.parse(localStorage.getItem("userData") || "{}");
-      userData._id = providerId;
-        userData.fullName = data.fullName;
-    userData.email = data.email;
-    userData.phone = data.phone;
-      localStorage.setItem("userData", JSON.stringify(userData));
-      console.log('✅ Saved provider ID to localStorage:', providerId);
-    fetch(`http://localhost:5000/api/customer/rating/average/${providerId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(r => r.json())
-    .then(ratingData => {
-      console.log('Rating data:', ratingData);
-    })
-    .catch(err => console.error('Rating fetch error:', err));
-  }
-})
-.catch(err => console.error('Provider fetch error:', err));
+
 
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
   const getImageUrl = (photoPath) => {
