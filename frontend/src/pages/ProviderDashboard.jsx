@@ -23,9 +23,9 @@ import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
-
-// Fix for Leaflet marker icons
-delete L.Icon.Default.prototype._getIconUrl;
+import { API_BASE_URL } from "../Constants";
+  // Fix for Leaflet marker icons
+  delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
