@@ -63,15 +63,7 @@ const ServiceTaken = require("./models/servicetaken");
 const Notification = require("./models/notification");
 const Rating = require("./models/rating");
 const ServiceProvider = require("./models/ServiceProvider");
-const cloudinary = require('cloudinary').v2;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
-
-module.exports = cloudinary;
 // ---------------------------
 // NEW (use safeMount)
 safeMount("/api/service-provider", "./routes/serviceProvider");

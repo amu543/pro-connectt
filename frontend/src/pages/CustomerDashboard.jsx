@@ -25,14 +25,28 @@ import { FaBriefcase, FaCheckCircle, FaChevronDown, FaChevronUp, FaMapMarkerAlt,
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE_URL } from "../Constants";
-import { getImageUrl, getInitials } from "../utils/imageUtils";
+import { getInitials } from "../utils/imageUtils";
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
-
+const getProviderImageUrl = (photoPath) => {
+  if (!photoPath) return null;
+  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
+  
+  const serverBase = API_BASE_URL.replace(/\/api.*$/i, '');
+  
+  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+  cleanPath = cleanPath.replace(/^\.+/, '');
+  
+  if (!cleanPath.startsWith('/')) {
+    cleanPath = '/' + cleanPath;
+  }
+  
+  return `${serverBase}${cleanPath}`;
+};
 
 // Services images
 import babysitter from "../assets/services/babysitter.jpeg";
@@ -1333,7 +1347,7 @@ const stopLocationUpdates = () => {
   console.log("Processing provider:", provider); // Debug log to see what we're getting
   
   const fullName = provider.fullName || provider.name || "Unknown Provider";
-  const profilePhoto = provider.profilePhoto ? getImageUrl(provider.profilePhoto) : null;
+  const profilePhoto = provider.profilePhoto ? getProviderImageUrl(provider.profilePhoto) : null;
   const experience = provider.yearsOfExperience || provider.experience || "N/A";
   const skills = provider.skills || provider.topSkills || [];
   const bio = provider.shortBio || provider.bio || "No bio available";
@@ -1903,7 +1917,7 @@ const renderStars = (rating) => {
                         {/* Provider Profile Photo - Now showing actual photo */}
                         {provider.profilePhoto ? (
                           <img
-                            src={getImageUrl(provider.profilePhoto)}
+                            src={getProviderImageUrl(provider.profilePhoto)}
                             alt={provider.fullName || provider.name}
                             className="w-16 h-16 rounded-full object-cover shadow-md"
                             onError={(e) => {
@@ -2129,7 +2143,7 @@ const renderStars = (rating) => {
                     </div>
                   ) : (
                     completedServices.map((service) => (
-                      <ServiceReviewCard key={service._id} service={service} getInitials={getInitials} />
+                      <ServiceReviewCard key={service._id} service={service} getInitials={getInitials} getProviderImageUrl={getProviderImageUrl} />
                     ))
                   )}
                 </div>
@@ -2483,7 +2497,7 @@ const renderStars = (rating) => {
                                         <div className="relative">
                                            {processedProvider.profilePhoto ? (
                                           <img
-                                                src={getImageUrl(processedProvider.profilePhoto)}
+                                                src={getProviderImageUrl(processedProvider.profilePhoto)}
                                                 alt={processedProvider.name}
                                                 className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover shadow-xl"
                                                 onError={(e) => {
@@ -2737,7 +2751,7 @@ function SidebarItem({ icon, label, active, onClick, badge }) {
   );
 }
 
-function ServiceReviewCard({ service, getInitials }) {
+function ServiceReviewCard({ service, getInitials, getProviderImageUrl }) {
   const navigate = useNavigate();
   const provider = service.provider || {};
   const review = service.review; 
@@ -2763,7 +2777,7 @@ function ServiceReviewCard({ service, getInitials }) {
             <div className="shrink-0">
               {provider.profilePhoto ? (
                 <img
-                  src={getImageUrl(provider.profilePhoto)}
+                  src={getProviderImageUrl(provider.profilePhoto)}
                   alt={provider.fullName || provider.name}
                   className="w-16 h-16 rounded-full object-cover"
                   onError={(e) => {

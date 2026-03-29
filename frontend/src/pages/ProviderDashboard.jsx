@@ -23,7 +23,6 @@ import { useEffect, useState } from "react";
 import { FaPhone } from "react-icons/fa";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useNavigate } from "react-router-dom";
-import { API_BASE_URL } from "../Constants";
 
 // Fix for Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -33,7 +32,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE 
+  ? `${import.meta.env.VITE_API_BASE}/api`
+  : "http://localhost:5000/api";
 
 export default function ProviderDashboard() {
   const navigate = useNavigate();
@@ -487,7 +488,7 @@ const RoutingControl = ({ start, end }) => {
   return null;
 };
   // First, check the provider details to get the ID
-fetch(`${API_BASE_URL}/api/sp-service-page/my-details`, {
+fetch('http://localhost:5000/api/sp-service-page/my-details', {
   headers: { 'Authorization': `Bearer ${token}` }
 })
 .then(r => r.json())
@@ -503,7 +504,7 @@ fetch(`${API_BASE_URL}/api/sp-service-page/my-details`, {
     userData.phone = data.phone;
       localStorage.setItem("userData", JSON.stringify(userData));
       console.log('✅ Saved provider ID to localStorage:', providerId);
-    fetch(`${API_BASE_URL}/customer/rating/average/${providerId}`, {
+    fetch(`http://localhost:5000/api/customer/rating/average/${providerId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     .then(r => r.json())
@@ -854,23 +855,28 @@ const handleSaveProfile = async () => {
         district: profileData.address?.district || profile.district,
         municipality: profileData.address?.municipality || profile.municipality,
         ward: profileData.address?.ward || profile.ward,
+        latitude: profileData.currentLocation?.coordinates?.[1] || profile.latitude,
+        longitude: profileData.currentLocation?.coordinates?.[0] || profile.longitude,
         skills: profileData.skills?.map(skill => ({
           name: skill.name || skill,
           price: skill.price || null
         })) || skills,
-        profilePhoto: profileData.photo // ✅ Directly use Cloudinary URL
+        profilePhoto: profileData.profilePhoto ||profileData.profilePhotoUrl || profilePic || newProfilePhoto
       };
-
       
       setProfile(updatedProfile);
       
       setSkills(updatedProfile.skills);
-      setProfilePic(profileData.photo);
-       
+       if (profileData.profilePhoto || profileData.profilePhotoUrl) {
+        setProfilePic(profileData.profilePhoto || profileData.profilePhotoUrl);
+      }
+      if (newProfilePhoto) {
+        setProfilePic(newProfilePhoto);
+      }
         const currentUserData = JSON.parse(localStorage.getItem("userData") || "{}");
       const updatedUserData = {
         ...currentUserData,
-         profilePhoto: profileData.photo, 
+        profilePhoto: newProfilePhoto,
         name: profileData.fullName || profile.name,
         fullName: profileData.fullName || profile.name,
         phone: profileData.phone || phone
@@ -1191,15 +1197,16 @@ const fetchProviderRatings = async () => {
         <div className="text-center mb-8">
           <div className="relative w-32 h-32 mx-auto mb-4">
             {profile.profilePhoto ? (
-             <img
-              src={profilePic || '/placeholder-avatar.png'}
-              alt="Profile"
-              className="profile-avatar"
-              onError={(e) => {
-                console.error("Image failed to load:", e.target.src);
-                e.target.src = '/placeholder-avatar.png';
-              }}
-            />
+              <img
+                src={getImageUrl(profile.profilePhoto)}
+                alt="Profile"
+                className="w-full h-full rounded-full object-cover shadow-lg border-4 border-white"
+                onError={(e) => {
+                   console.log("Image failed to load:", profile.profilePhoto);
+                  e.target.onerror = null;
+                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Provider')}&background=374151&color=fff&size=128`;
+                }}
+              />
             ) : (
               <div className="w-full h-full rounded-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-4xl font-bold shadow-lg">
                 {profile.name ? profile.name.charAt(0).toUpperCase() : 'P'}
@@ -1395,7 +1402,7 @@ function ProfileTab({
   setIsEditing,
   handleProfilePicChange
 }) {
-  const API_BASE_URL = "http://:5000/api";
+  const API_BASE_URL = "http://localhost:5000/api";
    console.log("===== PROFILE TAB RENDER =====");
    const getProfileImageSrc = () => {
     if (!profilePic) return null;
@@ -1718,7 +1725,7 @@ console.log("ProfileTab - profile.name:", profile.name);
           }}
         />
       ) : (
-        <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center">
+        <div className="w-full h-full bg-linear-to-br from-gray-700 to-gray-900 flex items-center justify-center">
           <span className="text-white text-5xl font-bold">
             {profile.name ? profile.name.charAt(0).toUpperCase() : 'P'}
           </span>
