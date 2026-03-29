@@ -93,16 +93,6 @@ export default function ProviderDashboard() {
   
   return true;
 };
-const getProviderImageUrl = (photoPath) => {
-  if (!photoPath) return null;
-  if (photoPath.startsWith('http') || photoPath.startsWith('data:')) return photoPath;
-  
-  const serverBase = API_BASE_URL.replace(/\/api.*$/i, '');
-  let cleanPath = photoPath.replace(/\\/g, '/').replace(/\/+/g, '/');
-  if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
-  
-  return `${serverBase}${cleanPath}`;
-};
   // Map Component for Modal
 const MapModal = () => {
   console.log("MapModal rendering with:", { selectedLocation, selectedCustomer ,providerLocation});
@@ -495,7 +485,6 @@ const RoutingControl = ({ start, end }) => {
   
   return null;
 };
-
 
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
   const getImageUrl = (photoPath) => {
@@ -1179,7 +1168,7 @@ const fetchProviderRatings = async () => {
           <div className="relative w-32 h-32 mx-auto mb-4">
             {profile.profilePhoto ? (
               <img
-                src={getProviderImageUrl(profile.profilePhoto)}
+                src={getImageUrl(profile.profilePhoto)}
                 alt="Profile"
                 className="w-full h-full rounded-full object-cover shadow-lg border-4 border-white"
                 onError={(e) => {
@@ -1383,7 +1372,6 @@ function ProfileTab({
   setIsEditing,
   handleProfilePicChange
 }) {
-  const API_BASE_URL = "http://localhost:5000/api";
    console.log("===== PROFILE TAB RENDER =====");
    const getProfileImageSrc = () => {
     if (!profilePic) return null;
