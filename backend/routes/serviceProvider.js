@@ -33,7 +33,9 @@ function generateOTP() {
 
 async function sendEmailOTP(email, otp) {
   const transporter = nodemailer.createTransport({
-    service: "gmail",
+     host: "smtp.gmail.com",
+    port: 587,
+    secure: false, 
     auth: {
       user: process.env.EMAIL_SERVICE_USER,
       pass: process.env.EMAIL_SERVICE_PASS,
@@ -1067,11 +1069,10 @@ const extraCertificatePaths = extraCertFiles.map(f => saveFile(f, "Extra Certifi
       sp.idVerified = passed;
       sp.isVerified = false; // require OTP verification  
       await sp.save();
+      await sendEmailOTP(email, otp);
       console.log("sp: Registration successful for", email);
       res.json({ message: "sp: Registered successfully, OTP sent via email" });
-      sendEmailOTP(email, otp).catch(err => {
-        console.error("OTP email failed (non-fatal):", err.message);
-      });
+
     } catch (err) {
       console.error("sp: Registration error", err);
       res.status(500).json({ error: "sp: Server error", details: err.message });
@@ -1250,14 +1251,10 @@ router.post("/sp-resend-otp", async (req, res) => {
     const otp = generateOTP();
     user.otp = otp;
     user.otpExpires = new Date(Date.now() + 5 * 60 * 1000);
-   await user.save();
-console.log("sp: OTP resent for", Email);
-res.json({ message: "sp: OTP resent via email" });
-
-// ✅ Send email AFTER responding (non-blocking)
-sendEmailOTP(Email, otp).catch(err => {
-  console.error("Resend registration OTP failed (non-fatal):", err.message);
-});
+    await user.save();
+    await sendEmailOTP(Email, otp);
+    console.log("sp: OTP resent for", Email);
+    res.json({ message: "sp: OTP resent via email" });
   } catch (err) {
     console.error("sp: OTP resend error", err);
     res.status(500).json({ error: "sp: Server error", details: err.message });
@@ -1337,37 +1334,35 @@ router.post("/sp-forgot-password", async (req, res) => {
       },
     });
     
-   console.log(`Password reset OTP sent to ${email}: ${otp}`);
-
-res.json({ 
-  message: "OTP sent to your email. Valid for 5 minutes.",
-  email: email
-});
-
-// ✅ Send email AFTER responding (non-blocking)
-transporter.sendMail({
-  from: process.env.EMAIL_SERVICE_USER,
-  to: email,
-  subject: "Pro Connect - Password Reset OTP",
-  html: `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-      <h2 style="color: #333;">Password Reset OTP</h2>
-      <p>Hello ${provider.fullName || "Service Provider"},</p>
-      <p>Your OTP for password reset is:</p>
-      <div style="text-align: center; margin: 30px 0;">
-        <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; background: #f5f5f5; padding: 15px; border-radius: 8px; display: inline-block;">
-          ${otp}
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVICE_USER,
+      to: email,
+      subject: "Pro Connect - Password Reset OTP",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+          <h2 style="color: #333;">Password Reset OTP</h2>
+          <p>Hello ${provider.fullName || "Service Provider"},</p>
+          <p>Your OTP for password reset is:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; background: #f5f5f5; padding: 15px; border-radius: 8px; display: inline-block;">
+              ${otp}
+            </div>
+          </div>
+          <p>This OTP is valid for <strong>5 minutes</strong>.</p>
+          <p>If you didn't request this, please ignore this email.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #999; font-size: 12px;">Pro Connect - Connecting Professionals</p>
         </div>
-      </div>
-      <p>This OTP is valid for <strong>5 minutes</strong>.</p>
-      <p>If you didn't request this, please ignore this email.</p>
-      <hr style="margin: 20px 0;">
-      <p style="color: #999; font-size: 12px;">Pro Connect - Connecting Professionals</p>
-    </div>
-  `
-}).catch(err => {
-  console.error("Forgot password email failed (non-fatal):", err.message);
-});
+      `
+    });
+    
+    console.log(`Password reset OTP sent to ${email}: ${otp}`);
+    
+    res.json({ 
+      message: "OTP sent to your email. Valid for 5 minutes.",
+      email: email
+    });
+    
   } catch (error) {
     console.error("Forgot password error:", error);
     res.status(500).json({ error: "Server error: " + error.message });
@@ -1543,26 +1538,24 @@ router.post("/sp-resend-otp-password", async (req, res) => {
       },
     });
     
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVICE_USER,
+      to: email,
+      subject: "Pro Connect - Password Reset OTP",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px;">
+          <h2>Password Reset OTP</h2>
+          <p>Hello ${provider.fullName || "Service Provider"},</p>
+          <p>Your new OTP is: <strong style="font-size: 24px;">${otp}</strong></p>
+          <p>Valid for 5 minutes.</p>
+        </div>
+      `
+    });
+    
     console.log(`Resent OTP to ${email}: ${otp}`);
-
-res.json({ message: "New OTP sent to your email" });
-
-// ✅ Send email AFTER responding (non-blocking)
-transporter.sendMail({
-  from: process.env.EMAIL_SERVICE_USER,
-  to: email,
-  subject: "Pro Connect - Password Reset OTP",
-  html: `
-    <div style="font-family: Arial, sans-serif; max-width: 600px;">
-      <h2>Password Reset OTP</h2>
-      <p>Hello ${provider.fullName || "Service Provider"},</p>
-      <p>Your new OTP is: <strong style="font-size: 24px;">${otp}</strong></p>
-      <p>Valid for 5 minutes.</p>
-    </div>
-  `
-}).catch(err => {
-  console.error("Resend OTP email failed (non-fatal):", err.message);
-});
+    
+    res.json({ message: "New OTP sent to your email" });
+    
   } catch (error) {
     console.error("Resend OTP error:", error);
     res.status(500).json({ error: "Server error" });
